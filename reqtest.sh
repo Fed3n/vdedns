@@ -1,0 +1,1 @@
+host google.it & host  google.it & host google.com & host  google.com & host lichess.org & host  lichess.org & host cs.unibo.it & host  cs.unibo.it & host stackoverflow.com & host  stackoverflow.com & host wiki.virtualsquare.org & host  wiki.virtualsquare.org & host dom.secret & host  dom.secret & host hash.dom & host  hash.dom & host hi.hash.dom & host  hi.hash.dom
