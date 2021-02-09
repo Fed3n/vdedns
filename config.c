@@ -26,7 +26,8 @@ static struct authinfo* ainfo;
 void print_fwdinfo(){
     struct fwdinfo* iterinfo;
 	for(iterinfo=finfo; iterinfo!=NULL; iterinfo=iterinfo->next){
-		printf("%s %s %s\n", iterinfo->type,iterinfo->domain,iterinfo->opt ? iterinfo->opt : "");
+		printf("%s %s %s %d\n", iterinfo->type,iterinfo->domain,
+				iterinfo->opt ? iterinfo->opt : "", iterinfo->time);
 	}
 }
 
@@ -44,11 +45,9 @@ void set_stacks(){
 		arg=type=config=NULL;
 		sscanf(line,"%ms %ms %ms %ms", &arg, &type, &vnl, &config);
 		if(arg && type && config){
-			int i, server, forwarder, querier;
-			i=server=forwarder=querier=0;
+			int i, forwarder, querier;
+			i=forwarder=querier=0;
 			while(arg[i] != '\0'){
-				if(arg[i]=='s' || arg[i]=='S')
-					server=1;
 				if(arg[i]=='f' || arg[i]=='F')
 					forwarder=1;
 				if(arg[i]=='q' || arg[i]=='Q')
@@ -57,11 +56,6 @@ void set_stacks(){
 			}
 			struct ioth	*stack = ioth_newstack(type, vnl);
 			ioth_config(stack, config);
-			if(server) {
-				server_stack = stack;
-				if(verbose)
-					printf("Server stack of %s type on %s vnl with config %s\n", type, vnl, config);
-			}
 			if(forwarder) {
 				fwd_stack = stack;
 				if(verbose)
@@ -90,9 +84,9 @@ int load_fwdconfig(){
 	while((linesize=getline(&line, &linesize, f)) != -1){
         if(line[0] == '#') continue;
 		struct fwdinfo *sinfo = malloc(sizeof(struct fwdinfo));
-        char *type, *domain, *addr, *opt;
-        type=domain=opt=NULL;
-		sscanf(line,"%ms %ms %ms %ms", &type, &domain, &addr, &opt);
+        char *type, *domain, *addr, *opt, *time;
+        type=domain=opt=time=NULL;
+		sscanf(line,"%ms %ms %ms %m[^,\n],%ms", &type, &domain, &addr, &opt, &time);
         if((    (strcmp(type, "otip")==0) || (strcmp(type, "hash")==0))
                 && domain != NULL ){
             sinfo->type = type;
@@ -100,6 +94,7 @@ int load_fwdconfig(){
 			sinfo->addr = strcmp(addr, "#")==0 ? NULL : addr;
 			if(sinfo->addr == NULL) free(addr);
             sinfo->opt = opt;
+			sinfo->time = time ? atoi(time) : 0;
             sinfo->next = NULL;
 			
             if(finfo == NULL) {

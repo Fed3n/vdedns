@@ -4,22 +4,12 @@
 #include <sys/socket.h>
 #include <stdint.h>
 
-struct ifinfo {
-    char* id;
-    char* type;
-    char* net;
-    char* ipv6addr;
-    char* ipv4addr;
-    char* gwaddr;
-    struct ioth* stack;
-    struct ifinfo* next;
-};
-
 struct fwdinfo {
     char* type;
     char* domain;
     char* addr;
     char* opt;
+    unsigned int time;
     struct fwdinfo* next;
 };
 
@@ -36,6 +26,9 @@ int load_authconfig();
 struct fwdinfo* get_fwdinfo(char* domain);
 struct ifinfo* get_ifinfo(char* id);
 int get_authinfo(struct sockaddr_storage* addr);
+
+void print_fwdinfo();
+
 
 #endif
 

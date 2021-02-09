@@ -1,13 +1,11 @@
 #define BUFSIZE 64
 
 //DNS
-#define PORT 53
-#define TIMEOUT 1 
+#define DNS_PORT 53
+#define TIMEOUT 1000 
 #define TTL 600
 
 #define DEF_OTIP_PERIOD 32
-#define UDP_CONN 0
-#define TCP_CONN 1
 
 //REQ TYPE
 #define TYPE_BASE 0

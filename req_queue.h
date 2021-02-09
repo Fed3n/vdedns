@@ -21,7 +21,8 @@ struct req {
 	uint8_t type;
     uint8_t dnsn;
     char opt[BUFSIZE];
-	time_t expire;
+	unsigned int otip_time;
+	long expire;
 	
 	//query connection fields
 	struct sockaddr_storage addr;
@@ -35,13 +36,13 @@ void freereq(struct req* reqhead, struct req* target);
 
 struct req* next_req(struct req* reqhead, struct req **start);
 
-struct req* next_expired_req(struct req* reqhead, struct req **start, time_t now);
+struct req* next_expired_req(struct req* reqhead, struct req **start, long now);
 
 struct req* enqueue_udp_request(struct req* reqhead, struct iothdns_header *h, uint16_t origid, char* origdom,
-        uint8_t type, uint8_t dnsn, char* opt, struct sockaddr_storage *from, size_t fromlen);
+        uint8_t type, uint8_t dnsn, char* opt, unsigned int time, struct sockaddr_storage *from, size_t fromlen);
 
 struct req* enqueue_tcp_request(struct req* reqhead, struct iothdns_header *h, uint16_t origid, char* origdom,
-		uint8_t type, uint8_t dnsn, char* opt, int fd);
+		uint8_t type, uint8_t dnsn, char* opt, unsigned int time, int fd);
 
 void printreq();
 

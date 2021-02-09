@@ -16,11 +16,17 @@ void printsockaddr6(struct sockaddr_storage *store);
 
 void printsockaddr(struct sockaddr_storage *store);
 
+void printaddr6(struct in6_addr *addr);
+
+void printaddr(struct in_addr *addr);
+
 size_t get_subdom(char* dst, char* full, char* match);
 
 char* next_domain_label(char* domain);
 
 int is_converted_ipv4(struct in6_addr *addr);
+
+long get_time_ms();
 
 void set_timer(long ms);
 

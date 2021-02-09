@@ -1,9 +1,10 @@
 #TYPE   DOMAIN                  ADDR                OPTION
-otip    dom.secret              #                   fede
-otip    otip.dom.secret         #                   edef
-otip    fede.dom                fc00:fede::feee     fede
+otip    dom.secret              #                   secret,8
+otip    otip.dom.secret         #                   otipsec
 #otip    google.com              #                   pswd
 hash    hash.dom                #
+hash    other.hash.dom          fc00:aaab::
+hash    same.dom                fc00:aaaa::
 hash    hash.mine               fc00:fdfd::43
 otip    test.dom.secret         #                   test
 otip    mydom.mine              fc00:fdfd::42       mine
