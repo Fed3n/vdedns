@@ -38,10 +38,10 @@ void printaddr(struct in_addr *addr){
 
 
 //STRING MANIPULATION
-size_t get_subdom(char* dst, char* full, char* match){
-	size_t flen = strnlen(full, IOTHDNS_MAXNAME);
-	size_t mlen = strnlen(match, IOTHDNS_MAXNAME);
-	if((int)(flen-mlen-1) <= 0) return 0;
+ssize_t get_subdom(char* dst, char* full, char* match){
+	ssize_t flen = strnlen(full, IOTHDNS_MAXNAME);
+	ssize_t mlen = strnlen(match, IOTHDNS_MAXNAME);
+	if((flen-mlen-1) <= 0) return 0;
 	strncpy(dst, full, (flen-mlen-1));
 	return (flen-mlen);
 }
@@ -69,26 +69,24 @@ int is_converted_ipv4(struct in6_addr *addr){
 
 
 //TIMER FUNCTIONS
-static struct timespec timer;
-static long timer_expire;
-
 long get_time_ms(){
 	struct timespec now;
 	clock_gettime(CLOCK_MONOTONIC, &now);
 	return (long)((now.tv_sec*1.E03) + (now.tv_nsec/1.0E6));
 }
 
-void set_timer(long ms){
-	clock_gettime(CLOCK_MONOTONIC, &timer);
-	timer_expire = ms;
+//returns expire time in ms
+long set_timer(long ms){
+	struct timespec now;
+	clock_gettime(CLOCK_MONOTONIC, &now);
+	return (long)(ms + ((now.tv_sec*1.E03) + (now.tv_nsec/1.0E6)));
 }
 
-int check_timer_expire(){
+int check_timer_expire(long expire){
 	struct timespec current;
 	clock_gettime(CLOCK_MONOTONIC, &current);
 	long currentms = (current.tv_sec*1.E03) + (current.tv_nsec/1.0E6);
-	if((long)(currentms > timer_expire)){
+	if((long)(currentms > expire)){
 		return 1;
 	} else return 0;
 }
-

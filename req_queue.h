@@ -38,11 +38,13 @@ struct req* next_req(struct req* reqhead, struct req **start);
 
 struct req* next_expired_req(struct req* reqhead, struct req **start, long now);
 
-struct req* enqueue_udp_request(struct req* reqhead, struct iothdns_header *h, uint16_t origid, char* origdom,
-        uint8_t type, uint8_t dnsn, char* opt, unsigned int time, struct sockaddr_storage *from, size_t fromlen);
+struct req* enqueue_udp_request(struct req* reqhead, struct iothdns_header *h, uint16_t origid, 
+		char* origdom, uint8_t type, uint8_t dnsn, char* opt, unsigned int time, 
+		struct sockaddr_storage *from, ssize_t fromlen);
 
-struct req* enqueue_tcp_request(struct req* reqhead, struct iothdns_header *h, uint16_t origid, char* origdom,
-		uint8_t type, uint8_t dnsn, char* opt, unsigned int time, int fd);
+struct req* enqueue_tcp_request(struct req* reqhead, struct iothdns_header *h, uint16_t origid, 
+		char* origdom, uint8_t type, uint8_t dnsn, char* opt, unsigned int time, int fd, 
+		struct sockaddr_storage *from, ssize_t fromlen);
 
 void printreq();
 

@@ -17,6 +17,7 @@
 #include <iothdns.h>
 
 #include "udp_dns.h"
+#include "tcp_dns.h"
 #include "parse_dns.h"
 #include "config.h"
 #include "revdb.h"
@@ -34,7 +35,43 @@ int verbose = 0;
 int forwarding = 1;
 long dnstimeout = TIMEOUT;
 
-//#################
+static uint8_t id_table[ID_TABLE_SIZE];
+static pthread_mutex_t idlock;
+
+static void init_random(){
+    unsigned int seed;
+    if(getrandom(&seed, sizeof(unsigned int), 0) == 0){
+        srandom(seed);
+    } else {
+        srandom(time(NULL) ^ getpid());
+    }
+}
+
+//tries to generate unique packet ids across both threads
+//algorithm is optimistic and will give up after some tries
+//hoping not to cause a packet mismatch
+#define MAX_RETRY 8
+uint16_t get_unique_id(){
+	int i;
+	uint16_t id;
+	pthread_mutex_lock(&idlock);
+	for(i = 0; i < MAX_RETRY; i++){
+		id = random();
+		if(id_table[id] == 0) {
+			id_table[id]++;
+			break;
+		}
+	}
+	pthread_mutex_unlock(&idlock);
+	if(i >= MAX_RETRY) printf("ID TABLE FAIL!\n");
+	return id;
+}
+void free_id(uint16_t id){
+	pthread_mutex_lock(&idlock);
+	id_table[id]--;
+	//printf("ID AMOUNT IS NOW %d\n", id_table[id]);
+	pthread_mutex_unlock(&idlock);
+}
 
 
 void printusage(char *progname){
@@ -50,15 +87,6 @@ void printusage(char *progname){
 			"\t--auth|-a\tEnable authorization mode according to authconfig.txt file.\n",
 			progname);
 	exit(1);
-}
-
-void init_random(){
-    unsigned int seed;
-    if(getrandom(&seed, sizeof(unsigned int), 0) == 0){
-        srandom(seed);
-    } else {
-        srandom(time(NULL) ^ getpid());
-    }
 }
 
 int main(int argc, char** argv){
@@ -116,13 +144,17 @@ int main(int argc, char** argv){
     if(fwd_stack == NULL) fwd_stack = ioth_newstack("kernel", NULL);
     if(query_stack == NULL) query_stack = ioth_newstack("kernel", NULL);
 	
+	init_random();
+	pthread_mutex_init(&idlock, NULL);
+	memset(id_table, 0, ID_TABLE_SIZE);
+
 	signal(SIGPIPE, SIG_IGN);
 
     qdns = iothdns_init(fwd_stack, "./config");  
     
     pthread_create(&udp_t, 0, run_udp, NULL);
 	//TODO TCP
-    //pthread_create(&tcp_t, 0, run_tcp, NULL);
+    pthread_create(&tcp_t, 0, run_tcp, NULL);
 	//clean reverse address resolution record
 	for(;;){
 		sleep(1);

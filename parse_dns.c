@@ -20,6 +20,7 @@
 #include "utils.h"
 #include "parse_dns.h"
 #include "udp_dns.h"
+#include "tcp_dns.h"
 #include "revdb.h"
 #include "const.h"
 
@@ -79,7 +80,7 @@ static int getrevaddr(char *name, struct in6_addr *addr) {
 
 
 //returns IOTHDNS_TYPE_A for ipv4, IOTHDNS_TYPE_AAAA for ipv6, 0 else
-int get_packet_answer(void* buf, size_t len, void* byteaddr){
+int get_packet_answer(void* buf, ssize_t len, void* byteaddr){
     char name[IOTHDNS_MAXNAME];
     struct iothdns_pkt *pkt;
 	struct iothdns_header h;
@@ -123,7 +124,7 @@ static void solve_hashing(struct pktinfo* pinfo){
 //retrieves the forwarded packet info from the requests queue
 //if it's a vdedns domain it solves it accordingly
 //else it sends the unmodified answer back changing to the right packet id
-void parse_ans(struct req* reqhead, int fd, char* buf, size_t len, ans_function_t *ans_fun){
+void parse_ans(struct req* reqhead, unsigned char* buf, ssize_t len, ans_function_t *ans_fun){
     struct req *current = NULL;
     struct req *iter;
 	struct pktinfo pinfo;
@@ -137,10 +138,11 @@ void parse_ans(struct req* reqhead, int fd, char* buf, size_t len, ans_function_
 	//checks if it was actually a suspended request
 	if(IOTHDNS_IS_RESPONSE(h.flags)){
 		while((iter = next_req(reqhead, &current)) != NULL){
-			if(iter->h.id == h.id && strncmp(iter->h.qname, h.qname, IOTHDNS_MAXNAME) == 0){
+			if(iter->h.id == h.id /*&& strncmp(iter->h.qname, h.qname, IOTHDNS_MAXNAME) == 0*/){
 			//FOUND SUSPENDED REQUEST
 				if(verbose) 
 					printf("qname: %s id: %d\n", h.qname, h.id);
+				free_id(iter->h.id);
 				//replaces answer with original request id
 				h.id = iter->origid;
 				if(iter->type == TYPE_OTIP || iter->type == TYPE_HASH){
@@ -170,14 +172,14 @@ void parse_ans(struct req* reqhead, int fd, char* buf, size_t len, ans_function_
 						iothdns_put_aaaa(pkt, &pinfo.baseaddr);
 						free(pinfo.rr);
 					}
-						ans_fun(fd, iothdns_buf(pkt), iothdns_buflen(pkt), &iter->addr, iter->addrlen);
+						ans_fun(iter->fd, iothdns_buf(pkt), iothdns_buflen(pkt), &iter->addr, iter->addrlen);
 				} else {
 				//CASE GENERIC
 				//packet is not parsed but left as is except for id
 						//id is first 2 bytes
 						buf[0] = h.id >> 8;
 						buf[1] = h.id;
-						ans_fun(fd, buf, len, &iter->addr, iter->addrlen);
+						ans_fun(iter->fd, buf, len, &iter->addr, iter->addrlen);
 				}
 				freereq(reqhead, iter);
 				break;
@@ -213,8 +215,8 @@ static int parse_hashing(struct fwdinfo* finfo, struct pktinfo* pinfo){
 
 //fills a pktinfo structure by parsing a request
 //then either forwards the request or answers it
-void parse_req(int fd, char* buf, size_t len, struct sockaddr_storage* from, 
-		size_t fromlen, fwd_function_t *fwd_fun, ans_function_t *ans_fun){
+void parse_req(int fd, unsigned char* buf, ssize_t len, struct sockaddr_storage* from, 
+		ssize_t fromlen, fwd_function_t *fwd_fun, ans_function_t *ans_fun){
 	struct iothdns_header h;
 	struct fwdinfo* finfo;
 	struct pktinfo pinfo;
@@ -224,6 +226,7 @@ void parse_req(int fd, char* buf, size_t len, struct sockaddr_storage* from,
 	pinfo.h = &h;
 	pinfo.opt=pinfo.origdom = NULL;
 	pinfo.rr = NULL;
+	pinfo.type = TYPE_BASE;
 	iothdns_free(pkt);
 
 	//if authorization is on and address is not authorized refuses request
@@ -292,7 +295,7 @@ void parse_req(int fd, char* buf, size_t len, struct sockaddr_storage* from,
 		if(forwarding){
 			//forward request to master dns
 			pinfo.origid = pinfo.h->id;
-			pinfo.h->id = random();
+			pinfo.h->id = get_unique_id(); 
 			pkt = iothdns_put_header(pinfo.h);
 			fwd_fun(fd, iothdns_buf(pkt), iothdns_buflen(pkt), from, fromlen, &pinfo);
 		} else {

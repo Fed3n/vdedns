@@ -20,7 +20,7 @@ void printaddr6(struct in6_addr *addr);
 
 void printaddr(struct in_addr *addr);
 
-size_t get_subdom(char* dst, char* full, char* match);
+ssize_t get_subdom(char* dst, char* full, char* match);
 
 char* next_domain_label(char* domain);
 
@@ -28,8 +28,8 @@ int is_converted_ipv4(struct in6_addr *addr);
 
 long get_time_ms();
 
-void set_timer(long ms);
+long set_timer(long ms);
 
-int check_timer_expire();
+int check_timer_expire(long expire);
 
 #endif

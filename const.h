@@ -4,6 +4,8 @@
 #define DNS_PORT 53
 #define TIMEOUT 1000 
 #define TTL 600
+#define MAX_DNS 256
+#define ID_TABLE_SIZE 65536
 
 #define DEF_OTIP_PERIOD 32
 

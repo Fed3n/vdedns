@@ -6,7 +6,6 @@
 #include <poll.h>
 #include <pthread.h>
 #include <sys/socket.h>
-#include <sys/random.h>
 #include <netinet/in.h>
 #include <netinet/ip.h>
 #include <netinet/udp.h>
@@ -25,12 +24,13 @@
 static __thread int sfd, qfd;
 static __thread struct req* reqhead;
 
-void send_udp_ans(int fd, char* buf, size_t len, struct sockaddr_storage* from, size_t fromlen){
+void send_udp_ans(int fd, unsigned char* buf, ssize_t len, 
+		struct sockaddr_storage* from, socklen_t fromlen){
 	ioth_sendto(sfd, buf, len, 0, (struct sockaddr *) from, fromlen);
 }
 
-static void _fwd_udp_req(char* buf, size_t len, struct sockaddr_storage* from, size_t fromlen, 
-		struct pktinfo* pinfo, uint8_t dnsn){
+static void _fwd_udp_req(unsigned char* buf, ssize_t len, 
+		struct sockaddr_storage* from, socklen_t fromlen, struct pktinfo* pinfo, uint8_t dnsn){
 	struct sockaddr_storage to = qdns->sockaddr[dnsn];
 	if(verbose) {
 		printf("querying dns: ");
@@ -40,17 +40,17 @@ static void _fwd_udp_req(char* buf, size_t len, struct sockaddr_storage* from, s
 		enqueue_udp_request(reqhead, pinfo->h, pinfo->origid, pinfo->origdom, pinfo->type,
 				dnsn, pinfo->opt, pinfo->otip_time, from, fromlen);
 	} else {
-		perror("udp req send");
+		perror("udp fwd req");
 	}
 }
 
-void fwd_udp_req(int fd, char* buf, size_t len, struct sockaddr_storage* from, size_t fromlen, 
-		struct pktinfo* pinfo){
+void fwd_udp_req(int fd, unsigned char* buf, ssize_t len, 
+		struct sockaddr_storage* from, socklen_t fromlen, struct pktinfo* pinfo){
 	_fwd_udp_req(buf, len, from, fromlen, pinfo, 0);
 }
 
 static void get_udp_ans(){
-    char buf[IOTHDNS_UDP_MAXBUF];
+    unsigned char buf[IOTHDNS_UDP_MAXBUF];
     int len;
     struct sockaddr_storage from;
     socklen_t fromlen = sizeof(from);
@@ -60,11 +60,11 @@ static void get_udp_ans(){
 		return;
 	}
     
-    parse_ans(reqhead, qfd, buf, len, send_udp_ans);
+    parse_ans(reqhead, buf, len, send_udp_ans);
 }
 
 static void get_udp_req(){
-    char buf[IOTHDNS_UDP_MAXBUF];
+    unsigned char buf[IOTHDNS_UDP_MAXBUF];
 	struct sockaddr_storage from;
 	socklen_t fromlen = sizeof(from);
     int len;
@@ -85,12 +85,13 @@ static void manage_udp_req_queue(){
 			printf("################\n");
 			printf("Expired ID: %d Query: %s", iter->h.id, iter->h.qname);
 		}
+		free_id(iter->h.id);
 		//if there are more available dns we query them aswell
 		if(qdns->sockaddr[++iter->dnsn].ss_family != 0){
 			char origdom[IOTHDNS_MAXNAME];
 			struct pktinfo pinfo;
 			pinfo.h = &iter->h;
-			pinfo.h->id = random();
+			pinfo.h->id = get_unique_id(); 
 			pinfo.origdom = origdom;
 			pinfo.origid = iter->origid;
 			strncpy(pinfo.origdom, iter->origdom, IOTHDNS_MAXNAME);
@@ -106,6 +107,7 @@ static void manage_udp_req_queue(){
 }
 
 void* run_udp(void* args){
+	long expire;
 	init_req_queue(&reqhead);
 
     struct sockaddr_in6 saddr;	
@@ -129,12 +131,12 @@ void* run_udp(void* args){
     }
 
 	struct pollfd fds[] = {{sfd, POLLIN, 0}, {qfd, POLLIN, 0}};
-	set_timer(dnstimeout);
+	expire = set_timer(dnstimeout);
     for(;;){
         if(poll(fds, 2, dnstimeout) == 0){
             //if it times out we check for expired requests
             manage_udp_req_queue();
-			set_timer(dnstimeout);
+			expire = set_timer(dnstimeout);
             continue;
         }
         if(verbose) 
@@ -151,9 +153,9 @@ void* run_udp(void* args){
 				printf("UDP connection (answer)\n");
             get_udp_ans();
         }
-		if(check_timer_expire()){
+		if(check_timer_expire(expire)){
             manage_udp_req_queue();
-			set_timer(dnstimeout);
+			expire = set_timer(dnstimeout);
 		}
     } 
 }

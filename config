@@ -1,4 +1,4 @@
-#nameserver 10.0.0.5
+#nameserver 10.0.0.1
 #nameserver 10.1.1.2
 nameserver 192.168.1.221
 nameserver 8.8.8.8

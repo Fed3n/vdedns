@@ -53,7 +53,9 @@ struct req* next_req(struct req* reqhead, struct req **start){
 	return res == reqhead ? NULL : res;
 }
 
-static struct req* _enqueue_request(struct req* reqhead, struct iothdns_header *h, uint16_t origid, char* origdom, uint8_t type, uint8_t dnsn, char* opt, unsigned int time, int fd, struct sockaddr_storage *from, size_t fromlen){
+static struct req* _enqueue_request(struct req* reqhead, struct iothdns_header *h, uint16_t origid, 
+		char* origdom, uint8_t type, uint8_t dnsn, char* opt, unsigned int time, int fd, 
+		struct sockaddr_storage *from, ssize_t fromlen){
 	struct req *new = malloc(sizeof(struct req));
 	new->h = *h;
 	new->h.qname = strndup(h->qname, IOTHDNS_MAXNAME);
@@ -80,11 +82,14 @@ static struct req* _enqueue_request(struct req* reqhead, struct iothdns_header *
 	return new;
 }
 
-struct req* enqueue_udp_request(struct req* reqhead, struct iothdns_header *h, uint16_t origid, char* origdom, uint8_t type, uint8_t dnsn, char* opt, unsigned int time, struct sockaddr_storage *from, size_t fromlen){
+struct req* enqueue_udp_request(struct req* reqhead, struct iothdns_header *h, uint16_t origid, 
+		char* origdom, uint8_t type, uint8_t dnsn, char* opt, unsigned int time, 
+		struct sockaddr_storage *from, ssize_t fromlen){
 	return _enqueue_request(reqhead, h, origid, origdom, type, dnsn, opt, time, 0, from, fromlen);
 }
-struct req* enqueue_tcp_request(struct req* reqhead, struct iothdns_header *h, uint16_t origid, char* origdom,
-		uint8_t type, uint8_t dnsn, char* opt, unsigned int time, int fd){
+struct req* enqueue_tcp_request(struct req* reqhead, struct iothdns_header *h, uint16_t origid, 
+		char* origdom, uint8_t type, uint8_t dnsn, char* opt, unsigned int time, int fd, 
+		struct sockaddr_storage *from, ssize_t fromlen){
 	return _enqueue_request(reqhead, h, origid, origdom, type, dnsn, opt, time, fd, NULL, 0);
 }
 
