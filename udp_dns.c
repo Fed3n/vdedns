@@ -17,6 +17,7 @@
 #include "dns.h"
 #include "parse_dns.h"
 #include "config.h"
+#include "newconfig.h"
 #include "utils.h"
 #include "const.h"
 
@@ -31,7 +32,7 @@ void send_udp_ans(int fd, unsigned char* buf, ssize_t len,
 
 static void _fwd_udp_req(unsigned char* buf, ssize_t len, 
 		struct sockaddr_storage* from, socklen_t fromlen, struct pktinfo* pinfo, uint8_t dnsn){
-	struct sockaddr_storage to = qdns->sockaddr[dnsn];
+	struct sockaddr_storage to = qdns[dnsn];
 	if(verbose) {
 		printf("querying dns: ");
 		printsockaddr(&to);
@@ -83,11 +84,11 @@ static void manage_udp_req_queue(){
     while((iter = next_expired_req(reqhead, &current, now)) != NULL){
 		if(verbose){
 			printf("################\n");
-			printf("Expired ID: %d Query: %s", iter->h.id, iter->h.qname);
+			printf("Expired ID: %d Query: %s\n", iter->h.id, iter->h.qname);
 		}
 		free_id(iter->h.id);
 		//if there are more available dns we query them aswell
-		if(qdns->sockaddr[++iter->dnsn].ss_family != 0){
+		if(qdns[++iter->dnsn].ss_family != 0){
 			char origdom[IOTHDNS_MAXNAME];
 			struct pktinfo pinfo;
 			pinfo.h = &iter->h;

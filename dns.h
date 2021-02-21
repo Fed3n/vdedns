@@ -22,9 +22,7 @@ typedef void ans_function_t(int fd, unsigned char* buf, ssize_t len,
 extern struct ioth* fwd_stack;
 extern struct ioth* query_stack;
 
-extern struct iothdns* qdns;
-
-extern int verbose, auth, forwarding;
+extern int verbose, auth, stacks, forwarding;
 extern long dnstimeout;
 
 uint16_t get_unique_id();

@@ -18,6 +18,7 @@
 #include "dns.h"
 #include "parse_dns.h"
 #include "config.h"
+#include "newconfig.h"
 #include "utils.h"
 #include "const.h"
 
@@ -274,7 +275,7 @@ static void manage_tcp_req_queue(){
 		}
 		free_id(iter->h.id);
 		//if there are more available dns we query them aswell
-		if(qdns->sockaddr[++iter->dnsn].ss_family != 0){
+		if(qdns[++iter->dnsn].ss_family != 0){
 			char origdom[IOTHDNS_MAXNAME];
 			struct pktinfo pinfo;
 			pinfo.h = &iter->h;
@@ -322,18 +323,18 @@ void* run_tcp(void* args){
         exit(1);
     }
 
-    efd = epoll_create1(0);
+	efd = epoll_create1(0);
     
 	//QUERY THREADS AND FDS
 	i = 0;
-	while(qdns->sockaddr[i].ss_family != 0 && i < MAX_DNS){
+	while(qdns[i].ss_family != 0 && i < MAX_DNS){
 		if(socketpair(AF_LOCAL, SOCK_STREAM, 0, sp) < 0){
 			perror("socketpair");
 			exit(1);
 		}
 		qfd[i] = sp[0];
 		struct querier_args* qa = malloc(sizeof(struct querier_args));
-		*qa = (struct querier_args){sp[1], &qdns->sockaddr[i]};
+		*qa = (struct querier_args){sp[1], &qdns[i]};
 		pthread_create(&query_t, NULL, run_querier, (void*)qa);
 		event.events = EPOLLIN;
 		event.data.ptr = malloc(sizeof(struct conn));
@@ -402,7 +403,7 @@ void* run_tcp(void* args){
                         recv_req_pkt(CEFD(events[i]), (struct clientconn*)(events[i].data.ptr));
                     }
                     break;
-                case RECV_ANS_LEN:
+				case RECV_ANS_LEN:
 					//receive response
 					printf("POLLIN SERVER LEN\n");
 					recv_ans_len(QEFD(events[i]), (struct conn*)(events[i].data.ptr));

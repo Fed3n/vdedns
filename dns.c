@@ -19,7 +19,7 @@
 #include "udp_dns.h"
 #include "tcp_dns.h"
 #include "parse_dns.h"
-#include "config.h"
+#include "newconfig.h"
 #include "revdb.h"
 #include "utils.h"
 #include "const.h"
@@ -28,10 +28,9 @@
 struct ioth* fwd_stack = NULL;
 struct ioth* query_stack = NULL;
 
-struct iothdns* qdns;
-
 int auth = 1;
 int verbose = 0;
+int stacks = 0;
 int forwarding = 1;
 long dnstimeout = TIMEOUT;
 
@@ -104,7 +103,6 @@ int main(int argc, char** argv){
 		{"auth", no_argument , 0, 'a'},
 		{0, 0, 0, 0}
 	};
-    load_fwdconfig();
 	int option_index;
     while(1) {
         int c;
@@ -119,7 +117,7 @@ int main(int argc, char** argv){
                 verbose = 1;
                 break;
             case 's':
-				set_stacks();
+				stacks = 1;
                 break;
             case 'S':
 				forwarding = 0;
@@ -136,11 +134,12 @@ int main(int argc, char** argv){
                 break;
             case 'a':
 				auth = 0;
-				load_authconfig();
                 break;
         }
     }
-    //if no stack assigned manually, defaults to kernel
+	if(init_config()) exit(1);
+	printf("finished init_config\n");
+    //if stack not assigned manually, defaults to kernel
     if(fwd_stack == NULL) fwd_stack = ioth_newstack("kernel", NULL);
     if(query_stack == NULL) query_stack = ioth_newstack("kernel", NULL);
 	
@@ -150,8 +149,6 @@ int main(int argc, char** argv){
 
 	signal(SIGPIPE, SIG_IGN);
 
-    qdns = iothdns_init(fwd_stack, "./config");  
-    
     pthread_create(&udp_t, 0, run_udp, NULL);
 	//TODO TCP
     pthread_create(&tcp_t, 0, run_tcp, NULL);

@@ -16,6 +16,7 @@
 #include <iothdns.h>
 
 #include "dns.h"
+#include "newconfig.h"
 #include "config.h"
 #include "utils.h"
 #include "parse_dns.h"
@@ -105,13 +106,14 @@ int get_packet_answer(void* buf, ssize_t len, void* byteaddr){
 //fills structure pktinfo with otip/hash address dns resource record if it's AAAA
 static void solve_hashing(struct pktinfo* pinfo){
     if(pinfo->h->qtype == IOTHDNS_TYPE_AAAA){
-		if(pinfo->type == TYPE_HASH){
+		if(pinfo->type & TYPE_HASH){
 			char buf[IOTHDNS_MAXNAME];
 			//hashes address only if it's a subdomain for base domain, else returns unhashed base address
 			if(get_subdom(buf, pinfo->origdom, pinfo->h->qname) > 0){
 				iothaddr_hash((void*)&pinfo->baseaddr, pinfo->origdom, NULL, 0);
 			}
-		} else {
+		}
+		if(pinfo->type & TYPE_OTIP){
 			iothaddr_hash((void*)&pinfo->baseaddr, pinfo->h->qname, pinfo->opt, 
 					iothaddr_otiptime(pinfo->otip_time ? pinfo->otip_time : DEF_OTIP_PERIOD, 0));
 		}
@@ -145,7 +147,7 @@ void parse_ans(struct req* reqhead, unsigned char* buf, ssize_t len, ans_functio
 				free_id(iter->h.id);
 				//replaces answer with original request id
 				h.id = iter->origid;
-				if(iter->type == TYPE_OTIP || iter->type == TYPE_HASH){
+				if(iter->type & TYPE_OTIP || iter->type & TYPE_HASH){
 				//CASE OTIP || HASH
 					//start filling pktinfo structure
 					pinfo.origdom = origdom;
@@ -155,7 +157,8 @@ void parse_ans(struct req* reqhead, unsigned char* buf, ssize_t len, ans_functio
 					strncpy(pinfo.origdom, iter->origdom, IOTHDNS_MAXNAME);
 					//getting ipv6 baseaddr from master dns answer for otip/hash solving
 					//it is solved only if it's aaaa
-					if(get_packet_answer(buf, len, &pinfo.baseaddr)==IOTHDNS_TYPE_AAAA){
+					if(h.qtype == IOTHDNS_TYPE_AAAA && 
+							get_packet_answer(buf, len, &pinfo.baseaddr)==IOTHDNS_TYPE_AAAA){
 						solve_hashing(&pinfo);
 						//if hash type && reverse policy is met, add addr to reverse db
 						if(pinfo.type == TYPE_HASH && check_reverse_policy(&pinfo.baseaddr, &ADDR6(&iter->addr))){
@@ -189,44 +192,23 @@ void parse_ans(struct req* reqhead, unsigned char* buf, ssize_t len, ans_functio
 	iothdns_free(pkt);
 }
 
-//populates pktinfo structure with hashing resolve information
-//and checks if vdedns has ip
-//have ip? send response : continue forwarding to master dns
-static int parse_hashing(struct fwdinfo* finfo, struct pktinfo* pinfo){
-	pinfo->type = strcmp("hash", finfo->type) == 0 ? TYPE_HASH : TYPE_OTIP;
-	pinfo->opt = finfo->opt;
-	pinfo->otip_time = finfo->time;
-	strncpy(pinfo->origdom, pinfo->h->qname, IOTHDNS_MAXNAME);
-	strncpy(pinfo->h->qname, finfo->domain, IOTHDNS_MAXNAME);
-	if(finfo->addr != NULL){
-		//prepare packet for answering
-		if(verbose)
-			printf("have base address!\n");
-		if(pinfo->h->qtype == IOTHDNS_TYPE_AAAA){
-			inet_pton(AF_INET6, finfo->addr, &pinfo->baseaddr);
-			solve_hashing(pinfo);
-		}
-		return 1;
-	} else {
-		//prepare packet for forwarding
-		return 0;
-	}
-}
-
 //fills a pktinfo structure by parsing a request
+//and checking it against local dns information
 //then either forwards the request or answers it
 void parse_req(int fd, unsigned char* buf, ssize_t len, struct sockaddr_storage* from, 
 		ssize_t fromlen, fwd_function_t *fwd_fun, ans_function_t *ans_fun){
 	struct iothdns_header h;
-	struct fwdinfo* finfo;
+	struct dns_otipdom* odom;
+	struct dns_hashdom* hdom;
+	struct dns_addrinfo* addri;
 	struct pktinfo pinfo;
 	char qname[IOTHDNS_MAXNAME];
 	char origdom[IOTHDNS_MAXNAME];
     struct iothdns_pkt* pkt = iothdns_get_header(&h, buf, len, qname);
 	pinfo.h = &h;
+	pinfo.type = TYPE_BASE;
 	pinfo.opt=pinfo.origdom = NULL;
 	pinfo.rr = NULL;
-	pinfo.type = TYPE_BASE;
 	iothdns_free(pkt);
 
 	//if authorization is on and address is not authorized refuses request
@@ -258,37 +240,62 @@ void parse_req(int fd, unsigned char* buf, ssize_t len, struct sockaddr_storage*
 				return;
 			}
 		}
-
-		//if it's a listed domain for vdedns, returns a fwdinfo struct
-		if((finfo = get_fwdinfo(h.qname)) != NULL){
-			if(verbose) printf("hashing req\n");
-			//domain is gonna be changed so parse_hashing will make use of origdom to save previous one
+		//checks if domain matches as otip domain
+		if((odom = lookup_otip_domain(h.qname)) != NULL){
+			pinfo.type |= TYPE_OTIP;
+			pinfo.opt = odom->pswd;
+			pinfo.otip_time = odom->time;
+			//domain unchanged in otip
+			pinfo.origdom = h.qname;
+		}
+		//checks if domain matches as hash subdomain
+		if((hdom = lookup_hash_domain(h.qname)) != NULL){
+			pinfo.type |= TYPE_HASH;
+			//domain might change in hash (i.e. matching)
+			strncpy(origdom, h.qname, IOTHDNS_MAXNAME);
 			pinfo.origdom = origdom;
-			//returns 1 if vdedns has base address
-			if(parse_hashing(finfo, &pinfo)){
-			//if we already have requested address, no forwarding and we answer the request
-				h.flags = (IOTHDNS_RESPONSE | IOTHDNS_RCODE_OK);
-				//header might have been modified by parsing, so we restore domain name
-				strncpy(h.qname, pinfo.origdom, IOTHDNS_MAXNAME);
+			pinfo.h->qname = hdom->domain;
+		}
+		//checks if domain address exists in local record
+		if((addri = lookup_domain_addr(h.qname)) != NULL){
+			h.flags = (IOTHDNS_RESPONSE | IOTHDNS_RCODE_OK);
+			//hash/otip resolution for ipv6 only
+			if(pinfo.type != TYPE_BASE){
+				if(h.qtype == IOTHDNS_TYPE_AAAA && addri->addr6 != NULL){
+					pinfo.baseaddr = *addri->addr6;
+					solve_hashing(&pinfo);
+					//if hash type && reverse policy is met, add addr to reverse db
+					if(pinfo.type == TYPE_HASH && check_reverse_policy(&pinfo.baseaddr, &ADDR6(from))){
+						ra_add(pinfo.origdom, &pinfo.baseaddr);
+						if(verbose) printf("added address to revdb\n");
+					}
+				}
+				h.qname = pinfo.origdom;
 				pkt = iothdns_put_header(&h);
-				//if it's a vdedns domain but query is not AAAA, we send an empty record
+				//putting response only when it's ipv6
 				if(pinfo.rr != NULL) {
 					iothdns_put_rr(IOTHDNS_SEC_ANSWER, pkt, pinfo.rr);
 					iothdns_put_aaaa(pkt, &pinfo.baseaddr);
 					free(pinfo.rr);
 				}
-				//if hash type && reverse policy is met, add addr to reverse db
-				if(h.qtype==IOTHDNS_TYPE_AAAA && pinfo.type == TYPE_HASH && 
-						check_reverse_policy(&pinfo.baseaddr, &ADDR6(from))){
-					ra_add(pinfo.origdom, &pinfo.baseaddr);
-					if(verbose) printf("added address to revdb\n");
+			} else {
+			//generic resolution
+				pkt = iothdns_put_header(&h);
+				if(h.qtype == IOTHDNS_TYPE_A && addri->addr4 != NULL){
+					struct iothdns_rr rr = {.name=pinfo.h->qname, .type=IOTHDNS_TYPE_A, 
+						.class=IOTHDNS_CLASS_IN, .ttl=TTL};
+					iothdns_put_rr(IOTHDNS_SEC_ANSWER, pkt, &rr);
+					iothdns_put_a(pkt, &addri->addr4);
+				} else if(h.qtype == IOTHDNS_TYPE_AAAA && addri->addr6 != NULL){
+					struct iothdns_rr rr = {.name=pinfo.h->qname, .type=IOTHDNS_TYPE_AAAA, 
+						.class=IOTHDNS_CLASS_IN, .ttl=TTL};
+					iothdns_put_rr(IOTHDNS_SEC_ANSWER, pkt, &rr);
+					iothdns_put_aaaa(pkt, &addri->addr6);
 				}
-				ans_fun(fd, iothdns_buf(pkt), iothdns_buflen(pkt), from, fromlen);	
-				iothdns_free(pkt);
-				return;
 			}
-		} else{
-			if(verbose) printf("generic req\n");
+			ans_fun(fd, iothdns_buf(pkt), iothdns_buflen(pkt), from, fromlen);
+			iothdns_free(pkt);
+			return;
 		}
 		//will forward only if forwarding is active
 		//else it will answer with a domain not found error
