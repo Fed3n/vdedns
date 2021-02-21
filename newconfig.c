@@ -195,36 +195,64 @@ int init_config(){
 	list = config_lookup(&cfg, "addresses");
 	if(list != NULL){
 		int count = config_setting_length(list);
-		int i, valid4, valid6;
-		struct in_addr addr4;
-		struct in6_addr addr6;
+		int i;
 		for(i = 0; i < count; i++){
 			config_setting_t* tmp = config_setting_get_elem(list, i);
-			const char* dom, *ip4, *ip6;
-			valid4=valid6=0;
-			dom=ip4=ip6=NULL;
+			const char* dom = NULL;
+			struct in_addr* addr4 = NULL;
+			struct in6_addr* addr6 = NULL;
+			int n4, n6;
+			n4=n6=0;
+			config_setting_t* ip4set, *ip6set;
+			ip4set=ip6set=NULL;
 			if(!config_setting_lookup_string(tmp, "dom", &dom)){
 				continue;
 			}
-			config_setting_lookup_string(tmp, "ip4", &ip4);
-			config_setting_lookup_string(tmp, "ip6", &ip6);
-			if(ip4 != NULL) valid4 = inet_pton(AF_INET, ip4, &addr4);
-			if(ip6 != NULL) valid6 = inet_pton(AF_INET6, ip6, &addr6);
-			if(!(valid4==1 || valid6==1)) continue;
+			//variable number of addresses
+			//gets dinamically allocated on a in_addr struct
+			ip4set = config_setting_lookup(tmp, "ip4");
+			if(ip4set != NULL){
+				int count4 = config_setting_length(ip4set);
+				int j;
+				for(j=0; j < count4; j++){
+					struct in_addr tmpaddr4;
+					config_setting_t* tmp4;
+					tmp4 = config_setting_get_elem(ip4set, j);
+					const char* ip4 = config_setting_get_string(tmp4);
+					if(ip4 != NULL){
+						if(inet_pton(AF_INET, ip4, &tmpaddr4) == 1){
+							addr4 = realloc(addr4, (n4+1)*sizeof(struct in_addr));
+							addr4[n4] = tmpaddr4;
+							n4++;
+						}
+					}
+				}
+			}
+			ip6set = config_setting_lookup(tmp, "ip6");
+			if(ip6set != NULL){
+				int count6 = config_setting_length(ip6set);
+				int j;
+				for(j=0; j < count6; j++){
+					struct in6_addr tmpaddr6;
+					config_setting_t* tmp6;
+					tmp6 = config_setting_get_elem(ip6set, j);
+					const char* ip6 = config_setting_get_string(tmp6);
+					if(ip6 != NULL){
+						if(inet_pton(AF_INET6, ip6, &tmpaddr6) == 1){
+							addr6 = realloc(addr6, (n6+1)*sizeof(struct in6_addr));
+							addr6[n6] = tmpaddr6;
+							n6++;
+						}
+					}
+				}
+			}
+			if(!(n4 > 0 || n6 > 0)) continue;
 			struct dns_addrinfo* new = malloc(sizeof(struct dns_addrinfo));
 			new->domain = strndup(dom, IOTHDNS_MAXNAME);
-			if(valid4 == 1){
-				new->addr4 = malloc(sizeof(struct sockaddr_storage));
-				*new->addr4 = addr4;
-			} else{
-				new->addr4 = NULL;
-			}
-			if(valid6 == 1){
-				new->addr6 = malloc(sizeof(struct sockaddr_storage));
-				*new->addr6 = addr6;
-			} else {
-				new->addr6 = NULL;
-			}
+			new->addr4 = addr4;
+			new->addr4_n = n4;
+			new->addr6 = addr6;
+			new->addr6_n = n6;
 			if(addr_h == NULL){
 				new->next = NULL;
 				addr_h = new;

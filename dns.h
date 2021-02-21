@@ -10,7 +10,8 @@ struct pktinfo {
 	uint8_t type;
 	char* opt;
     unsigned int otip_time;
-	struct in6_addr baseaddr;
+	unsigned int addr_n;
+	struct in6_addr* baseaddr;
 };
 
 typedef void fwd_function_t(int fd, unsigned char* buf, ssize_t len, 

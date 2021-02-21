@@ -138,7 +138,6 @@ int main(int argc, char** argv){
         }
     }
 	if(init_config()) exit(1);
-	printf("finished init_config\n");
     //if stack not assigned manually, defaults to kernel
     if(fwd_stack == NULL) fwd_stack = ioth_newstack("kernel", NULL);
     if(query_stack == NULL) query_stack = ioth_newstack("kernel", NULL);
