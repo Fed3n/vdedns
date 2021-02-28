@@ -223,15 +223,28 @@ void* run_querier(void* args){
 				printf("QUERY REQ FROM SERVER\n");
 				printf("event: %x\n", events[i].events);
 				if(!connected){
+					pthread_mutex_lock(&slock);
 					if((mfd = ioth_msocket(query_stack, AF_INET, SOCK_STREAM, 0)) < 0){
 						perror("socket mfd");
 						exit(1);
 					}
-					//if it fails break out
+					pthread_mutex_unlock(&slock);
+					//try ipv4 and then ipv6
 					if(ioth_connect(mfd, (struct sockaddr*)dnsaddr, sizeof(*dnsaddr)) < 0){
-						perror("mfd connect");
+						perror("connect1");
+						pthread_mutex_lock(&slock);
 						ioth_close(mfd);
-						break;
+						pthread_mutex_unlock(&slock);
+						pthread_mutex_lock(&slock);
+						if((mfd = ioth_msocket(query_stack, AF_INET6, SOCK_STREAM, 0)) < 0){
+							perror("socket mfd");
+							exit(1);
+						}
+						pthread_mutex_unlock(&slock);
+						if(ioth_connect(mfd, (struct sockaddr*)dnsaddr, sizeof(*dnsaddr)) < 0){
+							perror("mfd connect");
+							break;
+						}
 					}
 					connected = 1;
 					event.events = EPOLLIN | EPOLLRDHUP;
@@ -250,7 +263,9 @@ void* run_querier(void* args){
 				if(events[i].events & EPOLLRDHUP){
 					printf("hangup\n");
                     epoll_ctl(efd, EPOLL_CTL_DEL, mfd, NULL);
+					pthread_mutex_lock(&slock);
 					ioth_close(mfd);
+					pthread_mutex_unlock(&slock);
 					connected = 0;
 				} else if(events[i].events & EPOLLIN){
 				//response from master dns
@@ -309,10 +324,12 @@ void* run_tcp(void* args){
     saddr.sin6_family = AF_INET6;
     saddr.sin6_addr = in6addr_any;
     saddr.sin6_port = htons(DNS_PORT);
+	pthread_mutex_lock(&slock);
     if((sfd = ioth_msocket(fwd_stack, AF_INET6, SOCK_STREAM|SOCK_NONBLOCK, 0)) < 0){
         perror("socket sfd");
         exit(1);
     }
+	pthread_mutex_unlock(&slock);
 	setsockopt(sfd, SOL_SOCKET, SO_REUSEADDR, &(int){1}, sizeof(int));
     if(ioth_bind(sfd, (struct sockaddr*)&saddr, sizeof(saddr)) < 0){
         perror("bind tcp");
@@ -366,10 +383,13 @@ void* run_tcp(void* args){
                     printf("connection\n");
 					struct sockaddr_storage caddr;
 					socklen_t caddrlen = sizeof(caddr);
+					pthread_mutex_lock(&slock);
+					//accept is non-blocking, will immediately fail if no client
                     if((cfd = ioth_accept(sfd, (struct sockaddr*)&caddr, &caddrlen)) <= 0){
                         perror("accept");
                         break;
                     }
+					pthread_mutex_unlock(&slock);
                     event.events = EPOLLIN | EPOLLRDHUP;
                     event.data.ptr = malloc(sizeof(struct clientconn));
                     CEFD(event) = cfd;
@@ -382,9 +402,10 @@ void* run_tcp(void* args){
                     if(events[i].events & EPOLLRDHUP){
                         //connection closed from client, m8b check pending queries
                         printf("EPOLLRDHUP CLIENT\n");
-                        close(CEFD(events[i]));
+						pthread_mutex_lock(&slock);
+                        ioth_close(CEFD(events[i]));
+						pthread_mutex_unlock(&slock);
                         epoll_ctl(efd, EPOLL_CTL_DEL, CEFD(events[i]), NULL);
-                        if(CEBUF(events[i]) != NULL) free(CEBUF(events[i]));
                         free((struct clientconn*)(events[i].data.ptr));
                     } else {
                         printf("POLLIN CLIENT LEN\n");
@@ -395,8 +416,11 @@ void* run_tcp(void* args){
                     if(events[i].events & EPOLLRDHUP){
                         //connection closed from client, m8b check pending queries
                         printf("EPOLLRDHUP CLIENT\n");
-                        close(CEFD(events[i]));
+						pthread_mutex_lock(&slock);
+                        ioth_close(CEFD(events[i]));
+						pthread_mutex_unlock(&slock);
                         epoll_ctl(efd, EPOLL_CTL_DEL, CEFD(events[i]), NULL);
+                        if(CEBUF(events[i]) != NULL) free(CEBUF(events[i]));
                         free((struct clientconn*)(events[i].data.ptr));
                     } else {
                         printf("POLLIN CLIENT PKT\n");

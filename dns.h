@@ -25,6 +25,7 @@ extern struct ioth* query_stack;
 
 extern int verbose, auth, stacks, forwarding;
 extern long dnstimeout;
+extern pthread_mutex_t slock;
 
 uint16_t get_unique_id();
 void free_id(uint16_t id);

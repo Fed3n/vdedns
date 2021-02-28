@@ -267,7 +267,7 @@ int init_config(){
 	if(stacks){
 		const char* type, *vnl, *conf;
 		type=vnl=conf=NULL;
-		if((setting = config_lookup(&cfg, "vinterfaces.both"))){
+		if((setting = config_lookup(&cfg, "vinterface.both"))){
 			if((config_setting_lookup_string(setting, "type", &type) &&
 					config_setting_lookup_string(setting, "vnl", &vnl) &&
 					config_setting_lookup_string(setting, "config", &conf))){
@@ -277,7 +277,7 @@ int init_config(){
 				printf("Forwarder and query stack of %s type on %s vnl with config %s\n", type, vnl, conf);
 			}
 		} else {
-			if((setting = config_lookup(&cfg, "vinterfaces.accept"))){
+			if((setting = config_lookup(&cfg, "vinterface.dns"))){
 				if((config_setting_lookup_string(setting, "type", &type) &&
 						config_setting_lookup_string(setting, "vnl", &vnl) &&
 						config_setting_lookup_string(setting, "config", &conf))){
@@ -287,7 +287,7 @@ int init_config(){
 					printf("Forwarder stack of %s type on %s vnl with config %s\n", type, vnl, conf);
 				}	
 			}
-			if((setting = config_lookup(&cfg, "vinterfaces.query"))){
+			if((setting = config_lookup(&cfg, "vinterface.query"))){
 				if((config_setting_lookup_string(setting, "type", &type) &&
 						config_setting_lookup_string(setting, "vnl", &vnl) &&
 						config_setting_lookup_string(setting, "config", &conf))){

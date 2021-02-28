@@ -36,6 +36,7 @@ long dnstimeout = TIMEOUT;
 
 static uint8_t id_table[ID_TABLE_SIZE];
 static pthread_mutex_t idlock;
+pthread_mutex_t slock;
 
 static void init_random(){
     unsigned int seed;
@@ -144,12 +145,12 @@ int main(int argc, char** argv){
 	
 	init_random();
 	pthread_mutex_init(&idlock, NULL);
+	pthread_mutex_init(&slock, NULL);
 	memset(id_table, 0, ID_TABLE_SIZE);
 
 	signal(SIGPIPE, SIG_IGN);
 
     pthread_create(&udp_t, 0, run_udp, NULL);
-	//TODO TCP
     pthread_create(&tcp_t, 0, run_tcp, NULL);
 	//clean reverse address resolution record
 	for(;;){

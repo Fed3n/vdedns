@@ -27,7 +27,22 @@ static __thread struct req* reqhead;
 
 void send_udp_ans(int fd, unsigned char* buf, ssize_t len, 
 		struct sockaddr_storage* from, socklen_t fromlen){
-	ioth_sendto(sfd, buf, len, 0, (struct sockaddr *) from, fromlen);
+	//packet truncation check
+	//if a packet is longer than 512 bytes we send an empty
+	//answer with truncation bit on
+	if(len > IOTHDNS_UDP_MAXBUF){
+		struct iothdns_header h;
+		char qname[IOTHDNS_MAXNAME];
+    	struct iothdns_pkt* pkt = iothdns_get_header(&h, buf, len, qname);
+		iothdns_free(pkt);
+		h.flags |= IOTHDNS_TRUNC;
+		pkt = iothdns_put_header(&h);
+		ioth_sendto(sfd, iothdns_buf(pkt), iothdns_buflen(pkt), 0, 
+				(struct sockaddr *) from, fromlen);
+	} else {
+		ioth_sendto(sfd, buf, len, 0, 
+				(struct sockaddr *) from, fromlen);
+	}
 }
 
 static void _fwd_udp_req(unsigned char* buf, ssize_t len, 
@@ -116,16 +131,19 @@ void* run_udp(void* args){
     saddr.sin6_family = AF_INET6;
     saddr.sin6_addr = in6addr_any;
     saddr.sin6_port = htons(DNS_PORT);
-    
+   	
+	pthread_mutex_lock(&slock);
     //UDP MSOCKET
     if((sfd = ioth_msocket(fwd_stack, AF_INET6, SOCK_DGRAM, 0)) < 0){
         perror("server msocket udp");
         exit(1);
     }
-    if((qfd = ioth_msocket(fwd_stack, AF_INET6, SOCK_DGRAM, 0)) < 0){
+    if((qfd = ioth_msocket(query_stack, AF_INET6, SOCK_DGRAM, 0)) < 0){
         perror("query msocket udp");
         exit(1);
     }
+	pthread_mutex_unlock(&slock);
+	setsockopt(sfd, SOL_SOCKET, SO_REUSEADDR, &(int){1}, sizeof(int));
     if(ioth_bind(sfd, (struct sockaddr*)&saddr, sizeof(saddr)) < 0){
         perror("bind udp");
         exit(1);

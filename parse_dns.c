@@ -95,7 +95,7 @@ int get_packet_answer(void* buf, ssize_t len, struct pktinfo* pinfo, uint16_t ty
 			pinfo->addr_n++;
         } 
 	}
-	free(pkt);
+	iothdns_free(pkt);
     return pinfo->addr_n;
 }
 
@@ -117,7 +117,7 @@ static void solve_hashing(struct pktinfo* pinfo){
 			}
 			pinfo->rr = malloc(sizeof(struct iothdns_rr));
 			*pinfo->rr = (struct iothdns_rr){.name=pinfo->h->qname, .type=IOTHDNS_TYPE_AAAA,
-				.class=IOTHDNS_CLASS_IN, .ttl=TTL};
+				.class=IOTHDNS_CLASS_IN, .ttl=(pinfo->type & TYPE_OTIP) ? 0 : TTL};
 		}
 	}
 }
@@ -133,6 +133,7 @@ void parse_ans(struct req* reqhead, unsigned char* buf, ssize_t len, ans_functio
 	char qname[IOTHDNS_MAXNAME];
 	char origdom[IOTHDNS_MAXNAME];
     struct iothdns_pkt* pkt = iothdns_get_header(&h, buf, len, qname);
+	int i;
 	memset(&pinfo, 0, sizeof(struct pktinfo));
 	pinfo.h = &h;
 	pinfo.opt = NULL;
@@ -140,7 +141,7 @@ void parse_ans(struct req* reqhead, unsigned char* buf, ssize_t len, ans_functio
 	//checks if it was actually a suspended request
 	if(IOTHDNS_IS_RESPONSE(h.flags)){
 		while((iter = next_req(reqhead, &current)) != NULL){
-			if(iter->h.id == h.id /*&& strncmp(iter->h.qname, h.qname, IOTHDNS_MAXNAME) == 0*/){
+			if(iter->h.id == h.id){
 			//FOUND SUSPENDED REQUEST
 				if(verbose) 
 					printf("qname: %s id: %d\n", h.qname, h.id);
@@ -155,24 +156,27 @@ void parse_ans(struct req* reqhead, unsigned char* buf, ssize_t len, ans_functio
 					pinfo.opt = iter->opt;
 					pinfo.otip_time = iter->otip_time;
 					strncpy(pinfo.origdom, iter->origdom, IOTHDNS_MAXNAME);
-					pinfo.baseaddr = malloc(sizeof(struct in6_addr));
 					//getting ipv6 baseaddr from master dns answer for otip/hash solving
 					//it is solved only if it's aaaa
 					if(h.qtype == IOTHDNS_TYPE_AAAA && 
 							get_packet_answer(buf, len, &pinfo, IOTHDNS_TYPE_AAAA)){
 						solve_hashing(&pinfo);
 						//if hash type && reverse policy is met, add addr to reverse db
-						if(pinfo.type == TYPE_HASH && check_reverse_policy(pinfo.baseaddr, &ADDR6(&iter->addr))){
-							ra_add(pinfo.origdom, pinfo.baseaddr);
-							if(verbose) printf("added address to revdb\n");
+						if(pinfo.type == TYPE_HASH){
+							for(i=0; i < pinfo.addr_n; i++){
+								if(check_reverse_policy(&pinfo.baseaddr[i], &ADDR6(&iter->addr))){
+									ra_add(pinfo.origdom, &pinfo.baseaddr[i]);
+									if(verbose) printf("added address to revdb\n");
+								}
+							}
 						}
 					}
 					//replaces solved domain with original requested domain
 					strncpy(h.qname, pinfo.origdom, IOTHDNS_MAXNAME);
+					iothdns_free(pkt);
 					pkt = iothdns_put_header(&h);
 					//if it's a vdedns domain but query is not AAAA, we send an empty record
 					if(pinfo.rr != NULL) {
-						int i;
 						for(i=0; i < pinfo.addr_n; i++){
 							iothdns_put_rr(IOTHDNS_SEC_ANSWER, pkt, pinfo.rr);
 							iothdns_put_aaaa(pkt, &pinfo.baseaddr[i]);
@@ -238,7 +242,8 @@ void parse_req(int fd, unsigned char* buf, ssize_t len, struct sockaddr_storage*
 			if(getrevaddr(h.qname, &raddr) && (name=ra_search(&raddr)) != NULL){
 				h.flags = (IOTHDNS_RESPONSE | IOTHDNS_RCODE_OK);
 				pkt = iothdns_put_header(&h);
-				struct iothdns_rr rr = {.name=h.qname, .type=IOTHDNS_TYPE_PTR, .class=IOTHDNS_CLASS_IN, .ttl=TTL};
+				struct iothdns_rr rr = {.name=h.qname, .type=IOTHDNS_TYPE_PTR, 
+					.class=IOTHDNS_CLASS_IN, .ttl=TTL};
 				iothdns_put_rr(IOTHDNS_SEC_ANSWER, pkt, &rr);
 				iothdns_put_name(pkt, name);
 				ans_fun(fd, iothdns_buf(pkt), iothdns_buflen(pkt), from, fromlen);	
