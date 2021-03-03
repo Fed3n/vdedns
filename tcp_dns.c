@@ -18,7 +18,6 @@
 #include "dns.h"
 #include "parse_dns.h"
 #include "config.h"
-#include "newconfig.h"
 #include "utils.h"
 #include "const.h"
 
@@ -127,7 +126,7 @@ void recv_req_len(int fd, struct clientconn* data){
 void recv_ans_len(int fd, struct conn* data){
 	if(recv_len(fd, data, recv) == 0){
 		data->state = RECV_ANS_PKT;
-	}
+	} 
 }
 
 //on unfinished read state is unchanged
@@ -142,7 +141,7 @@ int recv_pkt(int fd, struct conn *data,
 		perror("recv req pkt");
 		return -1;
     }
-    printf("pktlen:%d buflen: %lu len: %lu\n", data->pktlen, data->buflen, len);
+    printf("pktlen:%d buflen: %lu len: %lu\n", data->pktlen, data->buflen+len, len);
     if((len + data->buflen) == data->pktlen){
     //finished read
         printf("recv_req complete read\n");
@@ -185,9 +184,11 @@ void recv_ans_pkt(int fd, struct conn *data){
 			data->buf = NULL;
 			break;
 		case -1:
-			epoll_ctl(efd, EPOLL_CTL_DEL, fd, NULL);
-			close(fd);
+			//reset data but don't close thread socket
+			printf("resetting...\n");
 			if(data->buf != NULL) free(data->buf);
+			data->buflen = 0;
+			data->pktlen = 0;
 			free(data);
 			break;
 	}
@@ -195,12 +196,12 @@ void recv_ans_pkt(int fd, struct conn *data){
 
 struct querier_args {
 	int sfd;
-	struct sockaddr_storage* dnsaddr;
+	struct sockaddr_in6* dnsaddr;
 };
 void* run_querier(void* args){
 	struct querier_args* qa = (struct querier_args*)args;
 	int sfd = qa->sfd;
-	struct sockaddr_storage* dnsaddr = qa->dnsaddr;
+	struct sockaddr_in6* dnsaddr = qa->dnsaddr;
 	int mfd;
 	unsigned char buf[IOTHDNS_TCP_MAXBUF];
 	int connected = 0;
@@ -222,42 +223,31 @@ void* run_querier(void* args){
 				//connect to master dns if not yet connected or connection expired
 				printf("QUERY REQ FROM SERVER\n");
 				printf("event: %x\n", events[i].events);
+				//emptying recv buffer before knowing if connection is successful
+				//so polling does not loop in case connection fails
+				nbytes = recv(sfd, buf, IOTHDNS_TCP_MAXBUF, 0);
+				printf("pktlen %d\n", nbytes);
 				if(!connected){
 					pthread_mutex_lock(&slock);
-					if((mfd = ioth_msocket(query_stack, AF_INET, SOCK_STREAM, 0)) < 0){
+					if((mfd = ioth_msocket(query_stack, AF_INET6, SOCK_STREAM, 0)) < 0){
 						perror("socket mfd");
 						exit(1);
 					}
 					pthread_mutex_unlock(&slock);
-					//try ipv4 and then ipv6
 					if(ioth_connect(mfd, (struct sockaddr*)dnsaddr, sizeof(*dnsaddr)) < 0){
-						perror("connect1");
-						pthread_mutex_lock(&slock);
-						ioth_close(mfd);
-						pthread_mutex_unlock(&slock);
-						pthread_mutex_lock(&slock);
-						if((mfd = ioth_msocket(query_stack, AF_INET6, SOCK_STREAM, 0)) < 0){
-							perror("socket mfd");
-							exit(1);
-						}
-						pthread_mutex_unlock(&slock);
-						if(ioth_connect(mfd, (struct sockaddr*)dnsaddr, sizeof(*dnsaddr)) < 0){
-							perror("mfd connect");
-							break;
-						}
+						perror("mfd connect");
+						break;
 					}
 					connected = 1;
 					event.events = EPOLLIN | EPOLLRDHUP;
 					event.data.fd = mfd;
 					epoll_ctl(efd, EPOLL_CTL_ADD, mfd, &event);
 				}
-				nbytes = recv(sfd, buf, IOTHDNS_TCP_MAXBUF, 0);
-				printf("pktlen %d\n", nbytes);
 				ioth_send(mfd, buf, nbytes, 0);
 			}
 			//RESPONSE OR HANGUP FROM MASTER DNS
 			else{
-				printf("RESPONSE FROM DNS\n");
+				printf("EVENT FROM DNS\n");
 				//master dns hangup
 				printf("event: %x\n", events[i].events);
 				if(events[i].events & EPOLLRDHUP){
@@ -290,7 +280,7 @@ static void manage_tcp_req_queue(){
 		}
 		free_id(iter->h.id);
 		//if there are more available dns we query them aswell
-		if(qdns[++iter->dnsn].ss_family != 0){
+		if(qdns[++iter->dnsn].sin6_family != 0){
 			char origdom[IOTHDNS_MAXNAME];
 			struct pktinfo pinfo;
 			pinfo.h = &iter->h;
@@ -343,8 +333,10 @@ void* run_tcp(void* args){
 	efd = epoll_create1(0);
     
 	//QUERY THREADS AND FDS
+	//creates a querying thread for each master dns in configuration
+	//threads are connected through a unix socket
 	i = 0;
-	while(qdns[i].ss_family != 0 && i < MAX_DNS){
+	while(qdns[i].sin6_family != 0 && i < MAX_DNS){
 		if(socketpair(AF_LOCAL, SOCK_STREAM, 0, sp) < 0){
 			perror("socketpair");
 			exit(1);
@@ -380,7 +372,7 @@ void* run_tcp(void* args){
         for(i=0; i < count; i++){
             switch(((struct conn*)(events[i].data.ptr))->state){
                 case LISTENER:
-                    printf("connection\n");
+                    printf("connection, event: %x\n", events[i].events);
 					struct sockaddr_storage caddr;
 					socklen_t caddrlen = sizeof(caddr);
 					pthread_mutex_lock(&slock);

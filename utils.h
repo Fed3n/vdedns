@@ -12,9 +12,7 @@ struct iothdns {
 };
 
 
-void printsockaddr6(struct sockaddr_storage *store);
-
-void printsockaddr(struct sockaddr_storage *store);
+void printsockaddr6(struct sockaddr_in6 *store);
 
 void printaddr6(struct in6_addr *addr);
 

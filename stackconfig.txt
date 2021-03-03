@@ -1,3 +1,0 @@
-#IF         TYPE        VNL                     CONFIG
-qf          vdestack    vxvde://234.0.0.1       eth,ip=10.0.0.1/24,ip=fc00:aaaa::1/64,gw=10.0.0.254,fqdn=local.dns.fwd
-#           vdestack    vxvde://234.0.0.1       eth,ip=10.0.0.2/24,ip=fc00:aaaa::2/64,gw=10.0.0.254,fqdn=local.dns.server

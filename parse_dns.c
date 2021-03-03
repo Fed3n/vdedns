@@ -16,7 +16,6 @@
 #include <iothdns.h>
 
 #include "dns.h"
-#include "newconfig.h"
 #include "config.h"
 #include "utils.h"
 #include "parse_dns.h"
@@ -116,6 +115,7 @@ static void solve_hashing(struct pktinfo* pinfo){
 						iothaddr_otiptime(pinfo->otip_time ? pinfo->otip_time : DEF_OTIP_PERIOD, 0));
 			}
 			pinfo->rr = malloc(sizeof(struct iothdns_rr));
+			//if it's otip response TLL has to be 0
 			*pinfo->rr = (struct iothdns_rr){.name=pinfo->h->qname, .type=IOTHDNS_TYPE_AAAA,
 				.class=IOTHDNS_CLASS_IN, .ttl=(pinfo->type & TYPE_OTIP) ? 0 : TTL};
 		}
@@ -165,7 +165,9 @@ void parse_ans(struct req* reqhead, unsigned char* buf, ssize_t len, ans_functio
 						if(pinfo.type == TYPE_HASH){
 							for(i=0; i < pinfo.addr_n; i++){
 								if(check_reverse_policy(&pinfo.baseaddr[i], &ADDR6(&iter->addr))){
+									pthread_mutex_lock(&ralock);
 									ra_add(pinfo.origdom, &pinfo.baseaddr[i]);
+									pthread_mutex_unlock(&ralock);
 									if(verbose) printf("added address to revdb\n");
 								}
 							}
@@ -206,6 +208,7 @@ void parse_ans(struct req* reqhead, unsigned char* buf, ssize_t len, ans_functio
 //then either forwards the request or answers it
 void parse_req(int fd, unsigned char* buf, ssize_t len, struct sockaddr_storage* from, 
 		ssize_t fromlen, fwd_function_t *fwd_fun, ans_function_t *ans_fun){
+	int i;
 	struct iothdns_header h;
 	struct dns_otipdom* odom;
 	struct dns_hashdom* hdom;
@@ -222,7 +225,7 @@ void parse_req(int fd, unsigned char* buf, ssize_t len, struct sockaddr_storage*
 	iothdns_free(pkt);
 
 	//if authorization is on and address is not authorized refuses request
-	if(!(auth || get_authinfo(from))){
+	if(!(auth || check_auth(from))){
 		h.flags = (IOTHDNS_RESPONSE | IOTHDNS_RCODE_EPERM);
 		pkt = iothdns_put_header(&h);
 		ans_fun(fd, iothdns_buf(pkt), iothdns_buflen(pkt), from, fromlen);	
@@ -273,22 +276,26 @@ void parse_req(int fd, unsigned char* buf, ssize_t len, struct sockaddr_storage*
 			//hash/otip resolution for ipv6 only
 			if(pinfo.type != TYPE_BASE){
 				if(h.qtype == IOTHDNS_TYPE_AAAA && addri->addr6 != NULL){
-					//TODO MULTI ADDRESSING
 					pinfo.baseaddr = malloc(addri->addr6_n*sizeof(struct in6_addr));
 					memcpy(pinfo.baseaddr, addri->addr6, addri->addr6_n*sizeof(struct in6_addr)); 
 					pinfo.addr_n = addri->addr6_n;
 					solve_hashing(&pinfo);
 					//if hash type && reverse policy is met, add addr to reverse db
-					if(pinfo.type == TYPE_HASH && check_reverse_policy(pinfo.baseaddr, &ADDR6(from))){
-						ra_add(pinfo.origdom, pinfo.baseaddr);
-						if(verbose) printf("added address to revdb\n");
+					if(pinfo.type == TYPE_HASH){
+						for(i=0; i < pinfo.addr_n; i++){
+							if(check_reverse_policy(&pinfo.baseaddr[i], &ADDR6(from))){
+								pthread_mutex_lock(&ralock);
+								ra_add(pinfo.origdom, &pinfo.baseaddr[i]);
+								pthread_mutex_unlock(&ralock);
+								if(verbose) printf("added address to revdb\n");
+							}
+						}
 					}
 				}
 				h.qname = pinfo.origdom;
 				pkt = iothdns_put_header(&h);
 				//putting response only when it's ipv6
 				if(pinfo.rr != NULL) {
-					int i;
 					for(i=0; i < pinfo.addr_n; i++){
 						iothdns_put_rr(IOTHDNS_SEC_ANSWER, pkt, pinfo.rr);
 						iothdns_put_aaaa(pkt, &pinfo.baseaddr[i]);

@@ -1,0 +1,153 @@
+VDEDNS (2021/03/02)
+
+COMPILE REQ: libioth, libiothconfig, libiothdns, libiothaddr, libconfig (debian package libconfig-dev o http://hyperrealm.github.io/libconfig/)
+
+##FILE NUOVI##
+
+dnc.c dns.h:
+*Parsing di opzioni con inizializzazione rispettivi parametri
+*Inizializzazione e gestione di una struttura dati per generare ID dei pacchetti unici
+*Avvio dei thread udp e tcp
+*Pulizia periodica reverse address table globale
+
+udp_dns.c udp_dns.h:
+*Thread per gestione richieste udp
+*Un socket per interazione con i client e un socket per interazione con i master dns
+*send_udp_ans si occupa di rispondere correttamente nel caso un pacchetto vada troncato (manda risposta vuota con truncation bit ON)
+
+tcp_dns.c tcp_dns.h:
+*Thread per gestione richieste tcp
+*Un listening socket per i client
+*Un querying thread per ogni master dns, i thread sono connessi al principale tramite unix sockets
+*I querying thread fanno da tramite per le richieste di forwarding ravvivando la connessione tcp al master dns nel momento del bisogno
+*La gestione di invii di pacchetti multipli/parziali su una sola connessione TCP e' implementata sia per la ricezione da client che per la ricezione da server usando un piccolo sistema a stati finiti e callbacks grazie alla possibilita' di farsi ritornare una struttura dati arbitraria dalla EPOLL
+
+parse_dnc.c parse_dns.h:
+*Funzioni di parsing e costruzioni di pacchetti uniche per udp e tcp
+*parse_req:
+    1) init strutture dati
+        pktinfo e' una struttura di wrapping per evitare di passare troppi parametri
+    2) controlla auth, se fallisce costruisce e manda pacchetto di autorizzazione fallita
+    3) controlla se e' un TYPE_PTR, nel caso prima del forwarding controlla RA table
+        se fa match allora costruisce e manda il pacchetto di risposta e ritorna
+    4) controlla se e' un domain OTIP
+        se si' aggiunge TYPE_OTIP, password e time corrispondenti a pktinfo
+    5) controlla se e' un domain HASH
+        se si' aggiunge TYPE_HASH e 
+        cambia il dominio di pktinfo a quello che ha fatto match e salva quello della richiesta
+    6) controlla se l'indirizzo e' tra gli indirizzi locali settati nel dns
+        se si'
+        6a) se e' otip/hash chiama solve_hashing per risolvere tutti gli indirizzi trovati
+            e impacchetta
+            NB in questo caso manda RR solo se e' richiesta AAAA, 
+            senno' manda pacchetti vuoti a prescindere se ci sia o meno la risorsa richiesta
+        6b) altrimenti semplicemente impacchetta gli indirizzi del tipo corrispondente disponibili
+        manda pacchetto generato in risposta e ritorna
+    7) se il forwarding e' attivo sistema il pacchetto per il forwarding e chiama la funzione di forwarding
+        altrimenti manda ENOENT come risposta
+
+*parse_ans:
+    1) controlla se il pacchetto e' nella coda delle richieste in sospeso, senno' lo ignora
+    2a) se e' otip/hash chiama estrae gli indirizzi IPv6 nella risposta e li fa risolvere
+        a solve_hashing, poi impacchetta e manda la risposta
+    2b) altrimenti manda il pacchetto indietro esattamente com'e' rimettendo l'id corretto
+
+*ogni indirizzo TYPE_HASH risolto viene aggiunto alla ra table (policy permettendo)
+
+config.c config.h:
+Parsing di file di configurazione unico gerarchico usando libconfig
+http://hyperrealm.github.io/libconfig/
+*Gli indirizzi IP dei master dns sono tutti IPv6 (IPv4 sono mappati ad IPv6) per interoperabilita'
+
+
+##NOTE SU TCP##
+
+*Questa volta il protocollo dovrebbe essere compliant con l'rfc
+impostando in /etc/resolv.conf il proxy come dns primario e inserendo `options use-vc` per
+richiedere risoluzione tcp i browser navigano correttamente anche su siti "complicati"
+purtroppo `host` di debian non fa richieste multiple/parziali su una sola connessione
+quindi non e' un buono strumento di testing per tcp
+
+*La gestione degli errori e' ancora un po' approssimativa e ci sono ancora tutte le stampe di debug
+
+*Il caso in cui si riceva "spazzatura" da un master dns non e' facilmente recuperabile per 
+come e' strutturato il programma al momento (il fd passerebbe in modalita' RECV_PKT attendendo di ricevere
+un pacchetto completo inesistente di una certa lunghezza, magari ignorando pacchetti successivi validi)
+
+*Il caso in cui un master dns si disconnetta durante un'operazione non e' ancora pensato 
+(mandare 0 bytes al thread principale come segnale di resettare la recezione del pacchetto era un'idea, ma un po' anti-protocollo, 
+forse andrebbe spostata la ricezione a stati dentro il querying thread)
+
+*Alcuni casi estremi legati a limitazioni dell'OS non sono ancora gestiti (e.g. troppi fd aperti nel caso di stress testing rompono il programma)
+
+*Facendo stress test in generale con molte richieste parallele (usando gnu parallel) tcp tende ogni tanto a "rompersi" per qualche ragione...
+Il programma continua ad eseguire senza errori (mi aspetterei almeno POLLERR) ma i socket smettono di ricevere dati per quanto risultino ancora aperti in /proc/pid/fd/ 
+(il programma resta in attesa in polling)
+
+*C'e' ancora una potenziale vulnerabilita', dato che non c'e' un timeout sulle connessioni dei client
+Un attaccante potrebbe aprire un grande numero di connessioni mandando un primo pacchetto indicando una lunghezza del pacchetto
+per poi non mandarlo mai tutto. Questo puo' portare facilmente a terminare la memoria del programma
+
+
+##TESTING##
+
+`sudo ./dns`
+    avvia un'istanza standard di proxy dns su localhost
+
+`./dns -s`
+    avvia un'istanza di proxy dns su rete vde, creando stack di rete basati sulla configurazione in dnsconfig.cfg.
+    Per testare con la configurazione attuale (vdestack, vxvde://234.0.0.1) serve una tap con indirizzo 10.0.0.254.
+    `vde_plug tap://tap0 vxvde://234.0.0.1` e attivare ip4 forwarding dovrebbe essere sufficiente al funzionamento
+    in questo caso il proxy si trova su 10.0.0.1
+
+
+TESTING CON `host`
+Il proxy accetta pacchetti sia udp che tcp (`host -T domain` per testare tcp)
+
+I domini con un indirizzo ip specificato in dnsconfig.cfg nel campo addresses sono forzatamente risolti localmente
+e.g. `host nodomain.none` verra' risolto localmente
+
+I domini otip/hash rispondono SOLO a richieste AAAA (negli altri casi mandano pacchetto vuoto)
+e possono essere risolti singolarmente o in catena
+
+Senza dover editare direttamente /etc/resolv.conf del sistema:
+
+`userbindmount -s -- bash`
+`echo 'nameserver 127.0.0.1' > /tmp/resolv.conf`
+`busybox mount --bind /tmp/resolv.conf /etc/resolv.conf`
+
+A questo punto si possono testare varie risoluzioni del dns
+    
+    `host mydom.mine`
+    mydom.mine ha un ip locale ed e' otip senza specifiche di tempo, viene quindi hashato per nome, password, tempo di default
+    
+    `host dom.secret`
+    dom.secret non ha un ip locale quindi viene forwardato al master dns e restituisce NXDOMAIN (a meno che non sia un dns locale con l'indirizzo)
+    
+    `host test.same.dom`
+    test.same.dom fa match con same.dom 
+    same.dom e' un dominio hash con ip locale quindi il dominio test.same.dom viene hashato con l'indirizzo base di same.dom
+
+    `host otip.same.dom`
+    otip.same.dom e' un dominio otip e same.dom e' un dominio hash, quindi otip.same.dom matcha per otip e per hash con same.dom
+    l'indirizzo base di otip.same.dom per otip e' ottenuto con risoluzione hash di otip.same.dom su dominio base same.dom
+
+    `host other.hash.dom`
+    other.hash.dom fa match col dominio hash other.hash.dom, dato che e' gia' il dominio base restituisce gli indirizzi associati non hashati
+
+    `host multi.other.hash.dom`
+    matcha con other.hash.dom e restituisce i due indirizzi associati hashati
+
+    `host cs.unibo.it`
+    host richiedera' A, AAAA e MX di default, ma cs.unibo.it risulta come dominio otip quindi restituisce solo AAAA
+    cs.unibo.it non ha record AAAA quindi la richiesta restituisce risposta vuota ma non NXDOMAIN
+
+    `host truncate.me`
+    truncate.me e' un dominio generico risolto localmente con un elevato numero di indirizzi IPv6 associati
+    se si prova a risolvere come udp si puo' osservare come la prima risposta AAAA sia un pacchetto vuoto con truncation bit on
+    `host` provera' quindi come da protocollo a rimandare la richiesta come tcp, ricevendo il pacchetto completo
+
+    (stesse richieste possono essere replicate con `host -T domain` per usare tcp)
+
+    Come test aggiuntivo si puo' provare ad aggiungere un dns non funzionante in cima alla lista in dnsconfig.cfg,
+    il programma inoltrera' le richieste al successivo dopo un timeout

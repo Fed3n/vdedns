@@ -12,15 +12,9 @@
 #include "utils.h"
 
 //PRINTS
-void printsockaddr6(struct sockaddr_storage *store){
+void printsockaddr6(struct sockaddr_in6 *store){
     char buf[64];
-    inet_ntop(AF_INET6, (void*)((struct in6_addr*)&((struct sockaddr_in6*)store)->sin6_addr), buf, 64);
-    printf("%s\n", buf);
-}
-
-void printsockaddr(struct sockaddr_storage *store){
-    char buf[64];
-    inet_ntop(AF_INET, (void*)((struct in_addr*)&((struct sockaddr_in*)store)->sin_addr), buf, 64);
+    inet_ntop(AF_INET6, (void*)((struct in6_addr*)&store->sin6_addr), buf, 64);
     printf("%s\n", buf);
 }
 

@@ -19,8 +19,8 @@
 #include "udp_dns.h"
 #include "tcp_dns.h"
 #include "parse_dns.h"
-#include "newconfig.h"
 #include "revdb.h"
+#include "config.h"
 #include "utils.h"
 #include "const.h"
 
@@ -34,9 +34,12 @@ int stacks = 0;
 int forwarding = 1;
 long dnstimeout = TIMEOUT;
 
+pthread_mutex_t ralock;
+pthread_mutex_t slock;
+
+//data for unique id generation
 static uint8_t id_table[ID_TABLE_SIZE];
 static pthread_mutex_t idlock;
-pthread_mutex_t slock;
 
 static void init_random(){
     unsigned int seed;
@@ -62,8 +65,11 @@ uint16_t get_unique_id(){
 			break;
 		}
 	}
+	if(i >= MAX_RETRY) {
+		if(verbose) printf("ID TABLE FAIL!\n");
+		id_table[id]++;
+	}
 	pthread_mutex_unlock(&idlock);
-	if(i >= MAX_RETRY) printf("ID TABLE FAIL!\n");
 	return id;
 }
 void free_id(uint16_t id){
@@ -146,6 +152,7 @@ int main(int argc, char** argv){
 	init_random();
 	pthread_mutex_init(&idlock, NULL);
 	pthread_mutex_init(&slock, NULL);
+	pthread_mutex_init(&ralock, NULL);
 	memset(id_table, 0, ID_TABLE_SIZE);
 
 	signal(SIGPIPE, SIG_IGN);

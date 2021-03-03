@@ -1,5 +1,0 @@
-#nameserver 10.0.0.14
-#nameserver 10.1.1.2
-nameserver 192.168.1.221
-nameserver 8.8.8.8
-nameserver 80.80.80.80

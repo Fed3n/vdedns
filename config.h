@@ -1,34 +1,43 @@
-#ifndef CONFIG_UTILS_H
-#define CONFIG_UTILS_H
+#ifndef CONFIG_H
+#define CONFIG_H
 
 #include <sys/socket.h>
 #include <stdint.h>
+#include "const.h"
 
-struct fwdinfo {
-    char* type;
+struct dns_otipdom {
     char* domain;
-    char* addr;
-    char* opt;
+    char* pswd;
     unsigned int time;
-    struct fwdinfo* next;
+    struct dns_otipdom* next;
 };
 
-struct authinfo {
-    struct sockaddr_storage addr;
-    struct sockaddr_storage mask;
-    struct authinfo* next;
+struct dns_hashdom {
+    char* domain;
+    struct dns_hashdom* next;
 };
 
-void set_stacks();
-int load_fwdconfig();
-int load_ifconfig();
-int load_authconfig();
-struct fwdinfo* get_fwdinfo(char* domain);
-struct ifinfo* get_ifinfo(char* id);
-int get_authinfo(struct sockaddr_storage* addr);
+struct dns_addrinfo {
+    char* domain;
+    unsigned int addr4_n;
+    unsigned int addr6_n;
+    struct in_addr* addr4;
+    struct in6_addr* addr6;
+    struct dns_addrinfo* next;
+};
 
-void print_fwdinfo();
+struct dns_authinfo {
+    struct in6_addr addr;
+    struct in6_addr mask;
+    struct dns_authinfo* next;
+};
 
+extern struct sockaddr_in6 qdns[MAX_DNS];
+
+struct dns_otipdom* lookup_otip_domain(char* domain);
+struct dns_hashdom* lookup_hash_domain(char* domain);
+struct dns_addrinfo* lookup_domain_addr(char* domain);
+int check_auth(struct sockaddr_storage* addr);
+int init_config();
 
 #endif
-
