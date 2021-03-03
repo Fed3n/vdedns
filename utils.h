@@ -4,14 +4,6 @@
 #include <sys/types.h>
 #include <iothdns.h>
 
-struct iothdns {
-	struct ioth *stack;
-	pthread_mutex_t mutex;
-	struct sockaddr_storage sockaddr[IOTHDNS_MAXNS];
-	char *search;
-};
-
-
 void printsockaddr6(struct sockaddr_in6 *store);
 
 void printaddr6(struct in6_addr *addr);
