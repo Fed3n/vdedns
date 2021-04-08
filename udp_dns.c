@@ -15,6 +15,7 @@
 #include <iothdns.h>
 
 #include "dns.h"
+#include "udp_dns.h"
 #include "parse_dns.h"
 #include "config.h"
 #include "utils.h"
@@ -22,7 +23,8 @@
 
 
 static __thread int sfd, qfd;
-static __thread struct req* reqhead;
+static __thread struct hashq* queue_h;
+static __thread struct hashq** hash_h;
 
 void send_udp_ans(int fd, unsigned char* buf, ssize_t len, 
 		struct sockaddr_storage* from, socklen_t fromlen){
@@ -52,8 +54,7 @@ static void _fwd_udp_req(unsigned char* buf, ssize_t len,
 		printsockaddr6(&to);
 	}
 	if(ioth_sendto(qfd, buf, len, 0, (struct sockaddr *) &to, sizeof(to)) > 0){
-		enqueue_udp_request(reqhead, pinfo->h, pinfo->origid, pinfo->origdom, pinfo->type,
-				dnsn, pinfo->opt, pinfo->otip_time, from, fromlen);
+		add_request(queue_h, hash_h, qfd, dnsn, pinfo, from, fromlen);
 	} else {
 		perror("udp fwd req");
 	}
@@ -75,7 +76,7 @@ static void get_udp_ans(){
 		return;
 	}
     
-    parse_ans(reqhead, buf, len, send_udp_ans);
+    parse_ans(hash_h, buf, len, send_udp_ans);
 }
 
 static void get_udp_req(){
@@ -92,38 +93,39 @@ static void get_udp_req(){
 }
 
 static void manage_udp_req_queue(){
-    struct req *current = NULL;
-	struct req *iter;
+    struct hashq *current = NULL;
+	struct hashq *iter;
     long now = get_time_ms();
-    while((iter = next_expired_req(reqhead, &current, now)) != NULL){
+    while((iter = next_expired_req(queue_h, &current)) != NULL){
+		struct dnsreq *req = (struct dnsreq*)iter->data;
 		if(verbose){
 			printf("################\n");
-			printf("Expired ID: %d Query: %s\n", iter->h.id, iter->h.qname);
+			printf("Expired ID: %d Query: %s\n", req->h.id, req->h.qname);
 		}
-		free_id(iter->h.id);
+		free_id(req->h.id);
 		//if there are more available dns we query them aswell
-		if(qdns[++iter->dnsn].sin6_family != 0){
+		if(qdns[++req->dnsn].sin6_family != 0){
 			char origdom[IOTHDNS_MAXNAME];
 			struct pktinfo pinfo;
-			pinfo.h = &iter->h;
+			pinfo.h = &req->h;
 			pinfo.h->id = get_unique_id(); 
 			pinfo.origdom = origdom;
-			pinfo.origid = iter->origid;
-			strncpy(pinfo.origdom, iter->origdom, IOTHDNS_MAXNAME);
-			pinfo.type = iter->type;
-			pinfo.opt = iter->opt;
+			pinfo.origid = req->origid;
+			strncpy(pinfo.origdom, req->origdom, IOTHDNS_MAXNAME);
+			pinfo.type = req->type;
+			pinfo.opt = req->opt;
 			struct iothdns_pkt *pkt = iothdns_put_header(pinfo.h);
 			_fwd_udp_req(iothdns_buf(pkt), iothdns_buflen(pkt), 
-					&iter->addr, iter->addrlen, &pinfo, iter->dnsn);
+					&req->addr, req->addrlen, &pinfo, req->dnsn);
 			iothdns_free(pkt);
 		}
-		freereq(reqhead, iter);
+		free_req(iter);
 	}
 }
 
 void* run_udp(void* args){
 	long expire;
-	init_req_queue(&reqhead);
+	init_hashq(&queue_h, &hash_h, ID_TABLE_SIZE);
 
     struct sockaddr_in6 saddr;	
     memset(&saddr, 0, sizeof(saddr));
@@ -131,7 +133,7 @@ void* run_udp(void* args){
     saddr.sin6_addr = in6addr_any;
     saddr.sin6_port = htons(DNS_PORT);
    	
-	pthread_mutex_lock(&slock);
+	//pthread_mutex_lock(&slock);
     //UDP MSOCKET
     if((sfd = ioth_msocket(fwd_stack, AF_INET6, SOCK_DGRAM, 0)) < 0){
         perror("server msocket udp");
@@ -141,7 +143,7 @@ void* run_udp(void* args){
         perror("query msocket udp");
         exit(1);
     }
-	pthread_mutex_unlock(&slock);
+	//pthread_mutex_unlock(&slock);
 	setsockopt(sfd, SOL_SOCKET, SO_REUSEADDR, &(int){1}, sizeof(int));
     if(ioth_bind(sfd, (struct sockaddr*)&saddr, sizeof(saddr)) < 0){
         perror("bind udp");

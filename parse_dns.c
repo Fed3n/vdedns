@@ -125,9 +125,8 @@ static void solve_hashing(struct pktinfo* pinfo){
 //retrieves the forwarded packet info from the requests queue
 //if it's a vdedns domain it solves it accordingly
 //else it sends the unmodified answer back changing to the right packet id
-void parse_ans(struct req* reqhead, unsigned char* buf, ssize_t len, ans_function_t *ans_fun){
-    struct req *current = NULL;
-    struct req *iter;
+void parse_ans(struct hashq** hash_h, unsigned char* buf, ssize_t len, ans_function_t *ans_fun){
+    struct hashq *iter;
 	struct pktinfo pinfo;
 	struct iothdns_header h;
 	char qname[IOTHDNS_MAXNAME];
@@ -140,64 +139,62 @@ void parse_ans(struct req* reqhead, unsigned char* buf, ssize_t len, ans_functio
 	pinfo.rr = NULL;
 	//checks if it was actually a suspended request
 	if(IOTHDNS_IS_RESPONSE(h.flags)){
-		while((iter = next_req(reqhead, &current)) != NULL){
-			if(iter->h.id == h.id){
-			//FOUND SUSPENDED REQUEST
-				if(verbose) 
-					printf("qname: %s id: %d\n", h.qname, h.id);
-				free_id(iter->h.id);
-				//replaces answer with original request id
-				h.id = iter->origid;
-				if(iter->type & TYPE_OTIP || iter->type & TYPE_HASH){
-				//CASE OTIP || HASH
-					//start filling pktinfo structure
-					pinfo.origdom = origdom;
-					pinfo.type = iter->type;
-					pinfo.opt = iter->opt;
-					pinfo.otip_time = iter->otip_time;
-					strncpy(pinfo.origdom, iter->origdom, IOTHDNS_MAXNAME);
-					//getting ipv6 baseaddr from master dns answer for otip/hash solving
-					//it is solved only if it's aaaa
-					if(h.qtype == IOTHDNS_TYPE_AAAA && 
-							get_packet_answer(buf, len, &pinfo, IOTHDNS_TYPE_AAAA)){
-						solve_hashing(&pinfo);
-						//if hash type && reverse policy is met, add addr to reverse db
-						if(pinfo.type == TYPE_HASH){
-							for(i=0; i < pinfo.addr_n; i++){
-								if(check_reverse_policy(&pinfo.baseaddr[i], &ADDR6(&iter->addr))){
-									pthread_mutex_lock(&ralock);
-									ra_add(pinfo.origdom, &pinfo.baseaddr[i]);
-									pthread_mutex_unlock(&ralock);
-									if(verbose) printf("added address to revdb\n");
-								}
+		if((iter = get_req(hash_h, h.id, h.qname)) != NULL){
+		struct dnsreq *req = (struct dnsreq*)iter->data;
+		//FOUND SUSPENDED REQUEST
+			if(verbose) 
+				printf("qname: %s id: %d\n", h.qname, h.id);
+			free_id(req->h.id);
+			//replaces answer with original request id
+			h.id = req->origid;
+			if(req->type & TYPE_OTIP || req->type & TYPE_HASH){
+			//CASE OTIP || HASH
+				//start filling pktinfo structure
+				pinfo.origdom = origdom;
+				pinfo.type = req->type;
+				pinfo.opt = req->opt;
+				pinfo.otip_time = req->otip_time;
+				strncpy(pinfo.origdom, req->origdom, IOTHDNS_MAXNAME);
+				//getting ipv6 baseaddr from master dns answer for otip/hash solving
+				//it is solved only if it's aaaa
+				if(h.qtype == IOTHDNS_TYPE_AAAA && 
+						get_packet_answer(buf, len, &pinfo, IOTHDNS_TYPE_AAAA)){
+					solve_hashing(&pinfo);
+					//if hash type && reverse policy is met, add addr to reverse db
+					if(pinfo.type == TYPE_HASH){
+						for(i=0; i < pinfo.addr_n; i++){
+							if(check_reverse_policy(&pinfo.baseaddr[i], &ADDR6(&req->addr))){
+								pthread_mutex_lock(&ralock);
+								ra_add(pinfo.origdom, &pinfo.baseaddr[i]);
+								pthread_mutex_unlock(&ralock);
+								if(verbose) printf("added address to revdb\n");
 							}
 						}
 					}
-					//replaces solved domain with original requested domain
-					strncpy(h.qname, pinfo.origdom, IOTHDNS_MAXNAME);
-					iothdns_free(pkt);
-					pkt = iothdns_put_header(&h);
-					//if it's a vdedns domain but query is not AAAA, we send an empty record
-					if(pinfo.rr != NULL) {
-						for(i=0; i < pinfo.addr_n; i++){
-							iothdns_put_rr(IOTHDNS_SEC_ANSWER, pkt, pinfo.rr);
-							iothdns_put_aaaa(pkt, &pinfo.baseaddr[i]);
-						}
-						free(pinfo.rr);
-						free(pinfo.baseaddr);
-					}
-						ans_fun(iter->fd, iothdns_buf(pkt), iothdns_buflen(pkt), &iter->addr, iter->addrlen);
-				} else {
-				//CASE GENERIC
-				//packet is not parsed but left as is except for id
-						//id is first 2 bytes
-						buf[0] = h.id >> 8;
-						buf[1] = h.id;
-						ans_fun(iter->fd, buf, len, &iter->addr, iter->addrlen);
 				}
-				freereq(reqhead, iter);
-				break;
+				//replaces solved domain with original requested domain
+				strncpy(h.qname, pinfo.origdom, IOTHDNS_MAXNAME);
+				iothdns_free(pkt);
+				pkt = iothdns_put_header(&h);
+				//if it's a vdedns domain but query is not AAAA, we send an empty record
+				if(pinfo.rr != NULL) {
+					for(i=0; i < pinfo.addr_n; i++){
+						iothdns_put_rr(IOTHDNS_SEC_ANSWER, pkt, pinfo.rr);
+						iothdns_put_aaaa(pkt, &pinfo.baseaddr[i]);
+					}
+					free(pinfo.rr);
+					free(pinfo.baseaddr);
+				}
+					ans_fun(req->fd, iothdns_buf(pkt), iothdns_buflen(pkt), &req->addr, req->addrlen);
+			} else {
+			//CASE GENERIC
+			//packet is not parsed but left as is except for id
+					//id is first 2 bytes
+					buf[0] = h.id >> 8;
+					buf[1] = h.id;
+					ans_fun(req->fd, buf, len, &req->addr, req->addrlen);
 			}
+			free_req(iter);
 		}
 	}
 	iothdns_free(pkt);

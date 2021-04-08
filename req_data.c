@@ -1,0 +1,57 @@
+#include <stdlib.h>
+#include <stdio.h>
+
+#include "dns.h"
+#include "req_data.h"
+#include "utils.h"
+
+struct reqdata_args{
+	uint16_t id;
+	char* qname;
+};
+
+void free_req(struct hashq* target){
+	void* data = free_hashq(target);
+	free(data);
+}
+
+struct hashq* next_expired_req(struct hashq* queue_h, struct hashq** start){
+	return next_expired_hashq(queue_h, start, get_time_ms());
+}
+
+//Returns 1 if id and domain name match, 0 else
+int reqdata_getcmpfun(void* arg1, void* arg2){
+	return((((struct reqdata_args*)arg1)->id == ((struct dnsreq*)arg2)->h.id) &&
+			strncmp(((struct reqdata_args*)arg1)->qname, ((struct dnsreq*)arg2)->h.qname, 
+				IOTHDNS_MAXNAME) == 0);
+}
+struct hashq* get_req(struct hashq** hash_h, uint16_t id, char* qname){
+	struct reqdata_args args = {id, qname};
+	return get_hashq(hash_h, id, (void*)&args, reqdata_getcmpfun);
+}
+
+
+struct hashq* add_request(struct hashq* queue_h, struct hashq** hash_h, int fd, int dnsn,
+		struct pktinfo *pinfo, struct sockaddr_storage *from, ssize_t fromlen){
+	struct dnsreq *req = calloc(1, sizeof(struct dnsreq));
+	req->h = *pinfo->h;
+	req->h.qname = strndup(pinfo->h->qname, IOTHDNS_MAXNAME);
+	req->origid = pinfo->origid;
+    req->dnsn = dnsn;
+
+	if(pinfo->origdom != NULL) strncpy(req->origdom, pinfo->origdom, IOTHDNS_MAXNAME);
+	req->type = pinfo->type;
+	req->expire = get_time_ms() + dnstimeout;
+	if(pinfo->opt != NULL) strncpy(req->opt, pinfo->opt, BUFSIZE);
+	req->otip_time = pinfo->otip_time;
+	
+	//TCP
+	req->fd = fd;
+
+	//UDP
+	if(from != NULL) req->addr = *from;
+	req->addrlen = fromlen;
+	
+	//add to queue
+	return add_hashq(queue_h, hash_h, pinfo->h->id, (void*)req);
+}
