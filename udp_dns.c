@@ -23,8 +23,6 @@
 
 
 static __thread int sfd, qfd;
-static __thread struct hashq* queue_h;
-static __thread struct hashq** hash_h;
 
 void send_udp_ans(int fd, unsigned char* buf, ssize_t len, 
 		struct sockaddr_storage* from, socklen_t fromlen){
@@ -54,7 +52,7 @@ static void _fwd_udp_req(unsigned char* buf, ssize_t len,
 		printsockaddr6(&to);
 	}
 	if(ioth_sendto(qfd, buf, len, 0, (struct sockaddr *) &to, sizeof(to)) > 0){
-		add_request(queue_h, hash_h, qfd, dnsn, pinfo, from, fromlen);
+		add_request(qfd, dnsn, pinfo, from, fromlen);
 	} else {
 		perror("udp fwd req");
 	}
@@ -76,7 +74,7 @@ static void get_udp_ans(){
 		return;
 	}
     
-    parse_ans(hash_h, buf, len, send_udp_ans);
+    parse_ans(buf, len, send_udp_ans);
 }
 
 static void get_udp_req(){
@@ -95,8 +93,7 @@ static void get_udp_req(){
 static void manage_udp_req_queue(){
     struct hashq *current = NULL;
 	struct hashq *iter;
-    long now = get_time_ms();
-    while((iter = next_expired_req(queue_h, &current)) != NULL){
+    while((iter = next_expired_req(&current)) != NULL){
 		struct dnsreq *req = (struct dnsreq*)iter->data;
 		if(verbose){
 			printf("################\n");
@@ -125,7 +122,7 @@ static void manage_udp_req_queue(){
 
 void* run_udp(void* args){
 	long expire;
-	init_hashq(&queue_h, &hash_h, ID_TABLE_SIZE);
+	init_reqhashq();
 
     struct sockaddr_in6 saddr;	
     memset(&saddr, 0, sizeof(saddr));

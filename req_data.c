@@ -5,17 +5,24 @@
 #include "req_data.h"
 #include "utils.h"
 
+static __thread struct hashq* queue_h;
+static __thread struct hashq** hash_h;
+
 struct reqdata_args{
 	uint16_t id;
 	char* qname;
 };
+
+void init_reqhashq(){
+	init_hashq(&queue_h, &hash_h, ID_TABLE_SIZE);
+}
 
 void free_req(struct hashq* target){
 	void* data = free_hashq(target);
 	free(data);
 }
 
-struct hashq* next_expired_req(struct hashq* queue_h, struct hashq** start){
+struct hashq* next_expired_req(struct hashq** start){
 	return next_expired_hashq(queue_h, start, get_time_ms());
 }
 
@@ -25,14 +32,13 @@ int reqdata_getcmpfun(void* arg1, void* arg2){
 			strncmp(((struct reqdata_args*)arg1)->qname, ((struct dnsreq*)arg2)->h.qname, 
 				IOTHDNS_MAXNAME) == 0);
 }
-struct hashq* get_req(struct hashq** hash_h, uint16_t id, char* qname){
+struct hashq* get_req(uint16_t id, char* qname){
 	struct reqdata_args args = {id, qname};
-	return get_hashq(hash_h, id, (void*)&args, reqdata_getcmpfun);
+	return get_hashq(hash_h, id, ID_TABLE_SIZE, (void*)&args, reqdata_getcmpfun);
 }
 
-
-struct hashq* add_request(struct hashq* queue_h, struct hashq** hash_h, int fd, int dnsn,
-		struct pktinfo *pinfo, struct sockaddr_storage *from, ssize_t fromlen){
+struct hashq* add_request(int fd, int dnsn, struct pktinfo *pinfo, 
+		struct sockaddr_storage *from, ssize_t fromlen){
 	struct dnsreq *req = calloc(1, sizeof(struct dnsreq));
 	req->h = *pinfo->h;
 	req->h.qname = strndup(pinfo->h->qname, IOTHDNS_MAXNAME);
@@ -41,7 +47,6 @@ struct hashq* add_request(struct hashq* queue_h, struct hashq** hash_h, int fd, 
 
 	if(pinfo->origdom != NULL) strncpy(req->origdom, pinfo->origdom, IOTHDNS_MAXNAME);
 	req->type = pinfo->type;
-	req->expire = get_time_ms() + dnstimeout;
 	if(pinfo->opt != NULL) strncpy(req->opt, pinfo->opt, BUFSIZE);
 	req->otip_time = pinfo->otip_time;
 	
@@ -53,5 +58,5 @@ struct hashq* add_request(struct hashq* queue_h, struct hashq** hash_h, int fd, 
 	req->addrlen = fromlen;
 	
 	//add to queue
-	return add_hashq(queue_h, hash_h, pinfo->h->id, (void*)req);
+	return add_hashq(queue_h, hash_h, pinfo->h->id, get_time_ms()+dnstimeout, (void*)req);
 }

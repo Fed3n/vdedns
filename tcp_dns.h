@@ -4,6 +4,16 @@
 #include "req_data.h"
 #include "parse_dns.h"
 
+struct clientconn {
+    int fd;
+    uint8_t state;
+    unsigned char* buf;
+    ssize_t buflen;
+    uint16_t pktlen;
+	struct sockaddr_storage from;
+	socklen_t fromlen;
+};
+
 void* run_tcp(void* args);
 
 void fwd_tcp_req(int fd, unsigned char* buf, ssize_t len, 

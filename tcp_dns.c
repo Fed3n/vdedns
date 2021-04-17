@@ -17,16 +17,15 @@
 
 #include "dns.h"
 #include "tcp_dns.h"
+#include "tcpfd_data.h"
 #include "config.h"
 #include "utils.h"
 #include "const.h"
 
 //EPOLL
 #define MAX_EVENTS 2048
-#define CEFD(event) (((struct clientconn*)(event.data.ptr))->fd)
-#define QEFD(event) (((struct conn*)(event.data.ptr))->fd)
-#define CESTATE(event) (((struct clientconn*)(event.data.ptr))->state)
-#define QESTATE(event) (((struct conn*)(event.data.ptr))->state)
+#define EFD(event) (((struct conn*)(event.data.ptr))->fd)
+#define ESTATE(event) (((struct conn*)(event.data.ptr))->state)
 #define CEBUF(event) (((struct clientconn*)(event.data.ptr))->buf)
 #define CEADDR(event) (((struct clientconn*)(event.data.ptr))->from)
 #define CEADDRLEN(event) (((struct clientconn*)(event.data.ptr))->fromlen)
@@ -37,6 +36,10 @@
 #define RECV_REQ_PKT 2
 #define RECV_ANS_LEN 3
 #define RECV_ANS_PKT 4
+#define THREAD_MSG 5
+
+static __thread int efd; 
+static int qfd[MAX_DNS], msgfd[MAX_DNS];
 
 struct conn {
 	int fd;
@@ -46,22 +49,24 @@ struct conn {
     uint16_t pktlen;
 };
 
-struct clientconn {
-    int fd;
-    uint8_t state;
+struct serverconn {
+	int fd;
+	uint8_t state;
     unsigned char* buf;
     ssize_t buflen;
     uint16_t pktlen;
-	struct sockaddr_storage from;
-	socklen_t fromlen;
+	int tfd;
 };
 
-static __thread int efd, qfd[MAX_DNS];
-static __thread struct hashq* queue_h;
-static __thread struct hashq** hash_h;
+struct threadconn {
+	int fd;
+	uint8_t state;
+	struct serverconn *connptr;
+};
+
 
 //allocates tcp dns packet from udp packet
-void *make_tcp_pkt(void* buf, ssize_t *len){
+static void *make_tcp_pkt(void* buf, ssize_t *len){
 	unsigned char* tcpbuf = malloc(*len+2);
 	tcpbuf[0] = (*len) >> 8;
 	tcpbuf[1] = (*len);
@@ -82,7 +87,7 @@ static void _fwd_tcp_req(int fd, unsigned char* buf, ssize_t len,
 	void* pkt = make_tcp_pkt(buf, &len);
 	if(send(qfd[dnsn], pkt, len, 0) > 0){
 		printf("sent to qfd\n");
-		add_request(queue_h, hash_h, fd, dnsn, pinfo, from, fromlen);	
+		add_request(fd, dnsn, pinfo, from, fromlen);	
 	} else {
 		perror("tcp fwd req");
 	}
@@ -96,13 +101,14 @@ void fwd_tcp_req(int fd, unsigned char* buf, ssize_t len,
 //returns 0 on success, -1 on failure
 //on success changes state to pkt recving
 //on failure client fd gets closed, querier fd retries
-int recv_len(int fd, struct conn *data, 
+static int recv_len(int fd, struct serverconn *data, 
 		ssize_t recv_fun(int sockfd, void *buf, size_t len, int flags)){
     unsigned char *buf = malloc(IOTHDNS_TCP_MAXBUF);
     if(recv_fun(fd, buf, 2, 0) < 2){
         //wrong format or error
         printf("bad length recv\n");
 		free(buf);
+		data->buf = NULL;
         return -1;
     }
     uint16_t pktlen = (buf[0] << 8 | buf[1]);
@@ -114,8 +120,8 @@ int recv_len(int fd, struct conn *data,
     data->pktlen = pktlen;
 	return 0;
 }
-void recv_req_len(int fd, struct clientconn* data){
-	if(recv_len(fd, (struct conn*)data, ioth_recv) == -1){
+static void recv_req_len(int fd, struct clientconn* data){
+	if(recv_len(fd, (struct serverconn*)data, ioth_recv) == -1){
 		epoll_ctl(efd, EPOLL_CTL_DEL, fd, NULL);
 		close(fd);
 		free(data);
@@ -123,16 +129,21 @@ void recv_req_len(int fd, struct clientconn* data){
 		data->state = RECV_REQ_PKT;
 	}
 }
-void recv_ans_len(int fd, struct conn* data){
+static void recv_ans_len(int fd, struct serverconn* data){
 	if(recv_len(fd, data, recv) == 0){
 		data->state = RECV_ANS_PKT;
-	} 
+	} else {
+		//reset buffer
+		//send close server connection signal in querier thread
+		char buf[] = {'\0'};
+		send(data->tfd, buf, 1, 0);		
+	}
 }
 
 //on unfinished read state is unchanged
 //on finished read parses request/answer and resets state
 //on failure client fd gets closed, querier fd resets state
-int recv_pkt(int fd, struct conn *data, 
+static int recv_pkt(int fd, struct serverconn *data, 
 		ssize_t recv_fun(int sockfd, void *buf, size_t len, int flags)){
     unsigned char* buf = data->buf;
     ssize_t len;
@@ -156,51 +167,59 @@ int recv_pkt(int fd, struct conn *data,
 		return -1;
     }
 }
-void recv_req_pkt(int fd, struct clientconn *data){
-	int res = recv_pkt(fd, (struct conn*)data, ioth_recv);
+static void recv_req_pkt(int fd, struct clientconn *data){
+	int res = recv_pkt(fd, (struct serverconn*)data, ioth_recv);
 	switch(res){
 		case 1:
-			parse_req(fd, data->buf, data->pktlen, &data->from,
-					data->fromlen, fwd_tcp_req, send_tcp_ans);
-			data->state = RECV_REQ_LEN;
-			if(data->buf != NULL) free(data->buf);
-			data->buf = NULL;
+			if(parse_req(fd, data->buf, data->pktlen, &data->from,
+					data->fromlen, fwd_tcp_req, send_tcp_ans) != 0){
+				//not a valid query packet/not authorized
+				epoll_ctl(efd, EPOLL_CTL_DEL, fd, NULL);
+				free_fd(fd);
+				close(fd);		
+			} else {
+				data->state = RECV_REQ_LEN;
+				if(data->buf != NULL) free(data->buf);
+				data->buf = NULL;
+			}
 			break;
 		case -1:
 			epoll_ctl(efd, EPOLL_CTL_DEL, fd, NULL);
+			free_fd(fd);
 			close(fd);
-			if(data->buf != NULL) free(data->buf);
-			free(data);
 			break;
 	}
 }
-void recv_ans_pkt(int fd, struct conn *data){
-	int res = recv_pkt(fd, (struct conn*)data, recv);
+static void recv_ans_pkt(int fd, struct serverconn *data){
+	int res = recv_pkt(fd, (struct serverconn*)data, recv);
 	switch(res){
 		case 1:
-			parse_ans(hash_h, data->buf, data->pktlen, send_tcp_ans);
+			parse_ans(data->buf, data->pktlen, send_tcp_ans);
 			data->state = RECV_ANS_LEN;
 			if(data->buf != NULL) free(data->buf);
 			data->buf = NULL;
 			break;
 		case -1:
-			//reset data but don't close thread socket
-			printf("resetting...\n");
+			//reset data and empty buffer
+			//send close server connection signal in querier thread
+			data->state = RECV_ANS_LEN;
 			if(data->buf != NULL) free(data->buf);
-			data->buflen = 0;
-			data->pktlen = 0;
-			free(data);
+			data->buf = NULL;
+			char buf[] = {'\0'};
+			send(data->tfd, buf, 1, 0);	
 			break;
 	}
 }
 
 struct querier_args {
 	int sfd;
+	int msgfd;
 	struct sockaddr_in6* dnsaddr;
 };
 void* run_querier(void* args){
 	struct querier_args* qa = (struct querier_args*)args;
 	int sfd = qa->sfd;
+	int msgfd = qa->msgfd;
 	struct sockaddr_in6* dnsaddr = qa->dnsaddr;
 	int mfd;
 	unsigned char buf[IOTHDNS_TCP_MAXBUF];
@@ -221,19 +240,19 @@ void* run_querier(void* args){
 			//QUERY REQ FROM MAIN THREAD
 			if(events[i].data.fd == sfd){
 				//connect to master dns if not yet connected or connection expired
-				printf("QUERY REQ FROM SERVER\n");
+				printf("QUERY REQ FROM MAIN THREAD\n");
 				printf("event: %x\n", events[i].events);
 				//emptying recv buffer before knowing if connection is successful
 				//so polling does not loop in case connection fails
 				nbytes = recv(sfd, buf, IOTHDNS_TCP_MAXBUF, 0);
 				printf("pktlen %d\n", nbytes);
 				if(!connected){
-					//pthread_mutex_lock(&slock);
+					pthread_mutex_lock(&slock);
 					if((mfd = ioth_msocket(query_stack, AF_INET6, SOCK_STREAM, 0)) < 0){
 						perror("socket mfd");
 						exit(1);
 					}
-					//pthread_mutex_unlock(&slock);
+					pthread_mutex_unlock(&slock);
 					if(ioth_connect(mfd, (struct sockaddr*)dnsaddr, sizeof(*dnsaddr)) < 0){
 						perror("mfd connect");
 						break;
@@ -245,9 +264,19 @@ void* run_querier(void* args){
 				}
 				ioth_send(mfd, buf, nbytes, 0);
 			}
+			//SIGNAL FROM MAIN THREAD
+			else if(events[i].data.fd == msgfd) {
+				printf("PACKET ERROR FROM MAIN THREAD\n");
+				//packet error, close connection
+				epoll_ctl(efd, EPOLL_CTL_DEL, mfd, NULL);
+				ioth_close(mfd);
+				connected = 0;
+				char buf[BUFSIZE];
+				recv(mfd, buf, BUFSIZE, 0);
+			}
 			//RESPONSE OR HANGUP FROM MASTER DNS
 			else{
-				printf("EVENT FROM DNS\n");
+				printf("EVENT FROM MASTER DNS\n");
 				//master dns hangup
 				printf("event: %x\n", events[i].events);
 				if(events[i].events & EPOLLRDHUP){
@@ -255,6 +284,11 @@ void* run_querier(void* args){
                     epoll_ctl(efd, EPOLL_CTL_DEL, mfd, NULL);
 					ioth_close(mfd);
 					connected = 0;
+					/*
+					//reset data flow on main thread
+					char buf[] = {'\0'};
+					send(msgfd, buf, 1, 0);
+					*/
 				} else if(events[i].events & EPOLLIN){
 				//response from master dns
 					printf("response\n");
@@ -270,8 +304,7 @@ void* run_querier(void* args){
 static void manage_tcp_req_queue(){
     struct hashq *current = NULL;
 	struct hashq *iter;
-    long now = get_time_ms();
-    while((iter = next_expired_req(queue_h, &current)) != NULL){
+    while((iter = next_expired_req(&current)) != NULL){
 		struct dnsreq *req = (struct dnsreq*)iter->data;
 		if(verbose){
 			printf("################\n");
@@ -298,10 +331,24 @@ static void manage_tcp_req_queue(){
 	}
 }
 
-void* run_tcp(void* args){
-	init_hashq(&queue_h, &hash_h, ID_TABLE_SIZE);
+//Closes inactive client connections and frees associated data structures
+static void manage_fd_timeout(){
+	struct hashq *current = NULL;
+	struct hashq *iter;
+    while((iter = next_expired_fd(&current)) != NULL){
+		struct tcpfd_data *data = (struct tcpfd_data*)iter->data;
+		if(verbose) printf("TCP FD: %d Timeout\n", data->fd);
+		ioth_close(data->fd);
+		epoll_ctl(efd, EPOLL_CTL_DEL, data->fd, NULL);
+		free_fd(data->fd);	
+	}
+}
 
-    int sfd, cfd, sp[2];
+void* run_tcp(void* args){
+	init_reqhashq();
+	init_fdhashq();
+
+    int sfd, cfd, sp1[2], sp2[2];
 	int i, count;
 	long expire;
 	pthread_t query_t;
@@ -323,7 +370,7 @@ void* run_tcp(void* args){
         exit(1);
     }
 	//TODO what should this be
-    if(ioth_listen(sfd, 256) < 0){
+    if(ioth_listen(sfd, LISTEN_QUEUE) < 0){
         perror("listen6");
         exit(1);
     }
@@ -332,30 +379,48 @@ void* run_tcp(void* args){
     
 	//QUERY THREADS AND FDS
 	//creates a querying thread for each master dns in configuration
-	//threads are connected through a unix socket
+	//threads are connected through unix sockets
 	i = 0;
 	while(qdns[i].sin6_family != 0 && i < MAX_DNS){
-		if(socketpair(AF_LOCAL, SOCK_STREAM, 0, sp) < 0){
+		//socket for dns packets forwarding
+		if(socketpair(AF_LOCAL, SOCK_STREAM, 0, sp1) < 0){
 			perror("socketpair");
 			exit(1);
 		}
-		qfd[i] = sp[0];
-		struct querier_args* qa = malloc(sizeof(struct querier_args));
-		*qa = (struct querier_args){sp[1], &qdns[i]};
-		pthread_create(&query_t, NULL, run_querier, (void*)qa);
+		//socket for signal passing
+		qfd[i] = sp1[0];
+		if(socketpair(AF_LOCAL, SOCK_STREAM, 0, sp2) < 0){
+			perror("socketpair");
+			exit(1);
+		}
+		msgfd[i] = sp2[0];
+		//setup EPOLL for both fds
+		//forward fd
 		event.events = EPOLLIN;
-		event.data.ptr = malloc(sizeof(struct conn));
-		QEFD(event) = qfd[i];
-		QESTATE(event) = RECV_ANS_LEN;
+		void* tmp = event.data.ptr = malloc(sizeof(struct serverconn));
+		EFD(event) = qfd[i];
+		ESTATE(event) = RECV_ANS_LEN;
+		((struct serverconn*)event.data.ptr)->tfd = msgfd[i];
 		epoll_ctl(efd, EPOLL_CTL_ADD, qfd[i], &event);
+		//signal passing fd
+		event.events = EPOLLIN;
+		event.data.ptr = malloc(sizeof(struct threadconn));
+		EFD(event) = msgfd[i];
+		ESTATE(event) = THREAD_MSG;
+		((struct threadconn*)event.data.ptr)->connptr = tmp;
+		epoll_ctl(efd, EPOLL_CTL_ADD, msgfd[i], &event);
+		//launch thread
+		struct querier_args* qa = malloc(sizeof(struct querier_args));
+		*qa = (struct querier_args){sp1[1], sp2[1], &qdns[i]};
+		pthread_create(&query_t, NULL, run_querier, (void*)qa);
 		i++;
 	}
 	
 	//SERVER FD
     event.events = EPOLLIN;
     event.data.ptr = malloc(sizeof(struct clientconn));
-    CEFD(event) = sfd;
-    CESTATE(event) = LISTENER;
+    EFD(event) = sfd;
+    ESTATE(event) = LISTENER;
     epoll_ctl(efd, EPOLL_CTL_ADD, sfd, &event);
 
 
@@ -364,12 +429,14 @@ void* run_tcp(void* args){
 		if(count == 0){
             //if it times out we check for expired requests
             manage_tcp_req_queue();
+			manage_fd_timeout();
 			expire = set_timer(dnstimeout);
             continue;	
 		}
         for(i=0; i < count; i++){
             switch(((struct conn*)(events[i].data.ptr))->state){
                 case LISTENER:
+					{
                     printf("connection, event: %x\n", events[i].events);
 					struct sockaddr_storage caddr;
 					socklen_t caddrlen = sizeof(caddr);
@@ -378,55 +445,69 @@ void* run_tcp(void* args){
                         perror("accept");
                         break;
                     }
+					//add fd in timeout queue
                     event.events = EPOLLIN | EPOLLRDHUP;
                     event.data.ptr = malloc(sizeof(struct clientconn));
-                    CEFD(event) = cfd;
-                    CESTATE(event) = RECV_REQ_LEN;
+                    EFD(event) = cfd;
+                    ESTATE(event) = RECV_REQ_LEN;
 					CEADDR(event) = caddr;
 					CEADDRLEN(event) = caddrlen;
                     epoll_ctl(efd, EPOLL_CTL_ADD, cfd, &event);
+					add_fd(cfd, event.data.ptr);
                     break;
+					}
                 case RECV_REQ_LEN:
                     if(events[i].events & EPOLLRDHUP){
                         //connection closed from client, m8b check pending queries
                         printf("EPOLLRDHUP CLIENT\n");
-                        ioth_close(CEFD(events[i]));
-                        epoll_ctl(efd, EPOLL_CTL_DEL, CEFD(events[i]), NULL);
-                        free((struct clientconn*)(events[i].data.ptr));
+                        ioth_close(EFD(events[i]));
+                        epoll_ctl(efd, EPOLL_CTL_DEL, EFD(events[i]), NULL);
+						free_fd(EFD(events[i]));
                     } else {
                         printf("POLLIN CLIENT LEN\n");
-                        recv_req_len(CEFD(events[i]), (struct clientconn*)(events[i].data.ptr));
+						//update activity time
+						update_fd(EFD(events[i]));
+                        recv_req_len(EFD(events[i]), (struct clientconn*)(events[i].data.ptr));
                     }
                     break;
                 case RECV_REQ_PKT:
                     if(events[i].events & EPOLLRDHUP){
                         //connection closed from client, m8b check pending queries
                         printf("EPOLLRDHUP CLIENT\n");
-                        ioth_close(CEFD(events[i]));
-                        epoll_ctl(efd, EPOLL_CTL_DEL, CEFD(events[i]), NULL);
-                        if(CEBUF(events[i]) != NULL) free(CEBUF(events[i]));
-                        free((struct clientconn*)(events[i].data.ptr));
+                        ioth_close(EFD(events[i]));
+                        epoll_ctl(efd, EPOLL_CTL_DEL, EFD(events[i]), NULL);
+						free_fd(EFD(events[i]));
                     } else {
                         printf("POLLIN CLIENT PKT\n");
-                        recv_req_pkt(CEFD(events[i]), (struct clientconn*)(events[i].data.ptr));
+						//update activity time
+						update_fd(EFD(events[i]));
+                        recv_req_pkt(EFD(events[i]), (struct clientconn*)(events[i].data.ptr));
                     }
                     break;
 				case RECV_ANS_LEN:
 					//receive response
 					printf("POLLIN SERVER LEN\n");
-					recv_ans_len(QEFD(events[i]), (struct conn*)(events[i].data.ptr));
+					recv_ans_len(EFD(events[i]), (struct serverconn*)(events[i].data.ptr));
 					break;
 				case RECV_ANS_PKT:
 					//receive response
 					printf("POLLIN SERVER PKT\n");
-					recv_ans_pkt(QEFD(events[i]), (struct conn*)(events[i].data.ptr));
+					recv_ans_pkt(EFD(events[i]), (struct serverconn*)(events[i].data.ptr));
 					break;
+				/*
+				case THREAD_MSG:
+					//closed master dns connection from thread
+					printf("QUERY THREAD MASTER DNS HANGUP\n");
+					char buf[BUFSIZE];
+					recv(EFD(events[i]), buf, BUFSIZE, 0);
+					break;
+				*/
             }
         }
 		if(check_timer_expire(expire)){
 			manage_tcp_req_queue();
+			manage_fd_timeout();
 			expire = set_timer(dnstimeout);
 		}
     }
 }
-

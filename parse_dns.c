@@ -103,16 +103,16 @@ static void solve_hashing(struct pktinfo* pinfo){
     if(pinfo->h->qtype == IOTHDNS_TYPE_AAAA){
 		int i;
 		for(i=0; i < pinfo->addr_n; i++){
-			if(pinfo->type & TYPE_HASH){
+			if(pinfo->type & TYPE_OTIP){
+				iothaddr_hash((void*)&pinfo->baseaddr[i], pinfo->h->qname, pinfo->opt, 
+						iothaddr_otiptime(pinfo->otip_time ? pinfo->otip_time : DEF_OTIP_PERIOD, 0));
+			}
+			else if(pinfo->type & TYPE_HASH){
 				char buf[IOTHDNS_MAXNAME];
 				//hashes address only if it's a subdomain for base domain, else returns unhashed base address
 				if(get_subdom(buf, pinfo->origdom, pinfo->h->qname) > 0){
 					iothaddr_hash((void*)&pinfo->baseaddr[i], pinfo->origdom, NULL, 0);
 				}
-			}
-			if(pinfo->type & TYPE_OTIP){
-				iothaddr_hash((void*)&pinfo->baseaddr[i], pinfo->h->qname, pinfo->opt, 
-						iothaddr_otiptime(pinfo->otip_time ? pinfo->otip_time : DEF_OTIP_PERIOD, 0));
 			}
 			pinfo->rr = malloc(sizeof(struct iothdns_rr));
 			//if it's otip response TLL has to be 0
@@ -125,7 +125,7 @@ static void solve_hashing(struct pktinfo* pinfo){
 //retrieves the forwarded packet info from the requests queue
 //if it's a vdedns domain it solves it accordingly
 //else it sends the unmodified answer back changing to the right packet id
-void parse_ans(struct hashq** hash_h, unsigned char* buf, ssize_t len, ans_function_t *ans_fun){
+void parse_ans(unsigned char* buf, ssize_t len, ans_function_t *ans_fun){
     struct hashq *iter;
 	struct pktinfo pinfo;
 	struct iothdns_header h;
@@ -139,7 +139,7 @@ void parse_ans(struct hashq** hash_h, unsigned char* buf, ssize_t len, ans_funct
 	pinfo.rr = NULL;
 	//checks if it was actually a suspended request
 	if(IOTHDNS_IS_RESPONSE(h.flags)){
-		if((iter = get_req(hash_h, h.id, h.qname)) != NULL){
+		if((iter = get_req(h.id, h.qname)) != NULL){
 		struct dnsreq *req = (struct dnsreq*)iter->data;
 		//FOUND SUSPENDED REQUEST
 			if(verbose) 
@@ -203,7 +203,8 @@ void parse_ans(struct hashq** hash_h, unsigned char* buf, ssize_t len, ans_funct
 //fills a pktinfo structure by parsing a request
 //and checking it against local dns information
 //then either forwards the request or answers it
-void parse_req(int fd, unsigned char* buf, ssize_t len, struct sockaddr_storage* from, 
+//returns -1 on invalid packet
+int parse_req(int fd, unsigned char* buf, ssize_t len, struct sockaddr_storage* from, 
 		ssize_t fromlen, fwd_function_t *fwd_fun, ans_function_t *ans_fun){
 	int i;
 	struct iothdns_header h;
@@ -227,7 +228,7 @@ void parse_req(int fd, unsigned char* buf, ssize_t len, struct sockaddr_storage*
 		pkt = iothdns_put_header(&h);
 		ans_fun(fd, iothdns_buf(pkt), iothdns_buflen(pkt), from, fromlen);	
 		iothdns_free(pkt);
-		return;
+		return -1;
 	}
 
 	if(IOTHDNS_IS_QUERY(h.flags)){
@@ -248,7 +249,7 @@ void parse_req(int fd, unsigned char* buf, ssize_t len, struct sockaddr_storage*
 				iothdns_put_name(pkt, name);
 				ans_fun(fd, iothdns_buf(pkt), iothdns_buflen(pkt), from, fromlen);	
 				iothdns_free(pkt);
-				return;
+				return 0;
 			}
 		}
 		//checks if domain matches as otip domain
@@ -322,7 +323,7 @@ void parse_req(int fd, unsigned char* buf, ssize_t len, struct sockaddr_storage*
 			}
 			ans_fun(fd, iothdns_buf(pkt), iothdns_buflen(pkt), from, fromlen);
 			iothdns_free(pkt);
-			return;
+			return 0;
 		}
 		//will forward only if forwarding is active
 		//else it will answer with a domain not found error
@@ -340,5 +341,9 @@ void parse_req(int fd, unsigned char* buf, ssize_t len, struct sockaddr_storage*
 			ans_fun(fd, iothdns_buf(pkt), iothdns_buflen(pkt), from, fromlen);	
 		}
 		iothdns_free(pkt);
+		return 0;
+	} else {
+		//not a dns query
+		return -1;
 	}
 }

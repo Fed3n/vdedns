@@ -29,13 +29,15 @@ struct dnsreq {
 	int fd;
 };
 
+void init_reqhashq();
+
 void free_req(struct hashq* target);
 
-struct hashq* next_expired_req(struct hashq* queue_h, struct hashq** start);
+struct hashq* next_expired_req(struct hashq** start);
 
-struct hashq* get_req(struct hashq** hash_h, uint16_t id, char* qname);
+struct hashq* get_req(uint16_t id, char* qname);
 
-struct hashq* add_request(struct hashq* queue_h, struct hashq** hash_h, int fd, int dnsn,
-		struct pktinfo *pinfo, struct sockaddr_storage *from, ssize_t fromlen);
+struct hashq* add_request(int fd, int dnsn, struct pktinfo *pinfo, 
+		struct sockaddr_storage *from, ssize_t fromlen);
 
 #endif

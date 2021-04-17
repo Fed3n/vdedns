@@ -38,9 +38,10 @@ struct hashq* next_expired_hashq(struct hashq* queue_h, struct hashq** start, lo
 }
 
 struct hashq* get_hashq(struct hashq** hash_h, int hashval, 
-		void* params, cmpfun_t fun){
+		int hashsize, void* params, cmpfun_t fun){
 	struct hashq *iter;
-	for(iter=hash_h[hashval]->hnext; iter != hash_h[hashval]; iter=iter->hnext){
+	int pos = hashval%hashsize; 
+	for(iter=hash_h[pos]->hnext; iter != hash_h[pos]; iter=iter->hnext){
 		if(fun(params, iter->data)){
 			return iter;
 		}
@@ -48,8 +49,20 @@ struct hashq* get_hashq(struct hashq** hash_h, int hashval,
 	return NULL;
 }
 
-struct hashq* add_hashq(struct hashq* queue_h, struct hashq** hash_h, int hashval, void* data){
+void moveto_tail(struct hashq* queue_h, struct hashq* target){
+	struct hashq *tmp = target;
+	target->qprev->qnext = target->qnext;
+	target->qnext->qprev = target->qprev;
+	target->qprev = queue_h->qprev;
+	target->qnext = queue_h;
+	queue_h->qprev->qnext = target;
+	queue_h->qprev = target;
+}
+
+struct hashq* add_hashq(struct hashq* queue_h, struct hashq** hash_h, 
+		int hashval, long expire, void* data){
 	struct hashq* new = malloc(sizeof(struct hashq));
+	new->expire = expire;
 	new->data = data;
 	new->qprev = queue_h->qprev;
 	queue_h->qprev->qnext = new;
