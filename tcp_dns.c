@@ -26,7 +26,7 @@
 #define MAX_EVENTS 2048
 #define EFD(event) (((struct conn*)(event.data.ptr))->fd)
 #define ESTATE(event) (((struct conn*)(event.data.ptr))->state)
-#define CEBUF(event) (((struct clientconn*)(event.data.ptr))->buf)
+#define EBUF(event) (((struct clientconn*)(event.data.ptr))->buf)
 #define CEADDR(event) (((struct clientconn*)(event.data.ptr))->from)
 #define CEADDRLEN(event) (((struct clientconn*)(event.data.ptr))->fromlen)
 
@@ -41,14 +41,13 @@
 static __thread int efd; 
 static int qfd[MAX_DNS], msgfd[MAX_DNS];
 
+//basic struct
 struct conn {
 	int fd;
 	uint8_t state;
-    unsigned char* buf;
-    ssize_t buflen;
-    uint16_t pktlen;
 };
 
+//struct for connections from master dns
 struct serverconn {
 	int fd;
 	uint8_t state;
@@ -58,6 +57,7 @@ struct serverconn {
 	int tfd;
 };
 
+//struct for connection between threads
 struct threadconn {
 	int fd;
 	uint8_t state;
@@ -86,10 +86,12 @@ static void _fwd_tcp_req(int fd, unsigned char* buf, ssize_t len,
 		struct sockaddr_storage* from, socklen_t fromlen, struct pktinfo* pinfo, uint8_t dnsn){
 	void* pkt = make_tcp_pkt(buf, &len);
 	if(send(qfd[dnsn], pkt, len, 0) > 0){
-		printf("sent to qfd\n");
+		printlog(LOG_DEBUG, "Forwarding TCP request to query thread.\n");
 		add_request(fd, dnsn, pinfo, from, fromlen);	
 	} else {
-		perror("tcp fwd req");
+		char errbuf[64];
+		strerror_r(errno, errbuf, 64);
+		printlog(LOG_ERROR, "Error forwarding TCP request to query thread: %s\n", errbuf);
 	}
 	free(pkt);
 }
@@ -106,13 +108,14 @@ static int recv_len(int fd, struct serverconn *data,
     unsigned char *buf = malloc(IOTHDNS_TCP_MAXBUF);
     if(recv_fun(fd, buf, 2, 0) < 2){
         //wrong format or error
-        printf("bad length recv\n");
+		char errbuf[64];
+		strerror_r(errno, errbuf, 64);
+		printlog(LOG_ERROR, "Error receiving TCP request length from fd %d: %s\n", fd, errbuf);
 		free(buf);
 		data->buf = NULL;
         return -1;
     }
     uint16_t pktlen = (buf[0] << 8 | buf[1]);
-    printf("pktlen: %d\n", pktlen);
 	//not taking length bytes into buffer, there is no need once saved
 	//since it will be parsed as a udp packet anyway
     data->buf = buf;
@@ -123,8 +126,8 @@ static int recv_len(int fd, struct serverconn *data,
 static void recv_req_len(int fd, struct clientconn* data){
 	if(recv_len(fd, (struct serverconn*)data, ioth_recv) == -1){
 		epoll_ctl(efd, EPOLL_CTL_DEL, fd, NULL);
+		free_fd(fd);
 		close(fd);
-		free(data);
 	} else{
 		data->state = RECV_REQ_PKT;
 	}
@@ -149,17 +152,20 @@ static int recv_pkt(int fd, struct serverconn *data,
     ssize_t len;
     if((len=recv_fun(fd, buf+data->buflen, (data->pktlen)-(data->buflen), 0)) <= 0){
         //wrong format or error
-		perror("recv req pkt");
+		char errbuf[64];
+		strerror_r(errno, errbuf, 64);
+		printlog(LOG_ERROR, "Error receiving TCP request packet from fd %d: %s\n", fd, errbuf);
 		return -1;
-    }
-    printf("pktlen:%d buflen: %lu len: %lu\n", data->pktlen, data->buflen+len, len);
+	}
+	printlog(LOG_DEBUG, "Received TCP packet. Expecting len: %d Current len: %lu Pkt len: %lu\n", 
+			data->pktlen, data->buflen+len, len);
     if((len + data->buflen) == data->pktlen){
     //finished read
-        printf("recv_req complete read\n");
+        printlog(LOG_DEBUG, "recv_req completed packet reassembly.\n");
 		return 1;
     } else if((len + data->buflen) < data->pktlen){
     //unfinished read
-        printf("recv_req incomplete read\n");
+        printlog(LOG_DEBUG, "recv_req incomplete packet.\n");
         data->buflen += len;
 		return 0;
     } else {
@@ -225,6 +231,10 @@ void* run_querier(void* args){
 	unsigned char buf[IOTHDNS_TCP_MAXBUF];
 	int connected = 0;
 	int i, nbytes, count;
+
+	char addrbuf[64];
+	printsockaddr6(addrbuf, dnsaddr);
+
 	struct epoll_event event, events[MAX_EVENTS];
 	memset(&event, 0, sizeof(struct epoll_event));
 
@@ -240,21 +250,24 @@ void* run_querier(void* args){
 			//QUERY REQ FROM MAIN THREAD
 			if(events[i].data.fd == sfd){
 				//connect to master dns if not yet connected or connection expired
-				printf("QUERY REQ FROM MAIN THREAD\n");
-				printf("event: %x\n", events[i].events);
+				printlog(LOG_DEBUG, "TCP query request from main thread in querier of DNS %s.\n",
+						addrbuf);
 				//emptying recv buffer before knowing if connection is successful
 				//so polling does not loop in case connection fails
 				nbytes = recv(sfd, buf, IOTHDNS_TCP_MAXBUF, 0);
-				printf("pktlen %d\n", nbytes);
 				if(!connected){
 					pthread_mutex_lock(&slock);
 					if((mfd = ioth_msocket(query_stack, AF_INET6, SOCK_STREAM, 0)) < 0){
-						perror("socket mfd");
+						char errbuf[64];
+						strerror_r(errno, errbuf, 64);
+						printlog(LOG_ERROR, "Error creating TCP querying socket to %s: %s\n", addrbuf, errbuf);
 						exit(1);
 					}
 					pthread_mutex_unlock(&slock);
 					if(ioth_connect(mfd, (struct sockaddr*)dnsaddr, sizeof(*dnsaddr)) < 0){
-						perror("mfd connect");
+						char errbuf[64];
+						strerror_r(errno, errbuf, 64);
+						printlog(LOG_ERROR, "Error creating TCP querying socket to %s: %s\n", addrbuf, errbuf);
 						break;
 					}
 					connected = 1;
@@ -262,11 +275,16 @@ void* run_querier(void* args){
 					event.data.fd = mfd;
 					epoll_ctl(efd, EPOLL_CTL_ADD, mfd, &event);
 				}
-				ioth_send(mfd, buf, nbytes, 0);
+				if(ioth_send(mfd, buf, nbytes, 0) <= 0){			
+					char errbuf[64];
+					strerror_r(errno, errbuf, 64);
+					printlog(LOG_ERROR, "Error forwarding data to DNS %s: %s\n", addrbuf,  errbuf);
+				}
 			}
 			//SIGNAL FROM MAIN THREAD
 			else if(events[i].data.fd == msgfd) {
-				printf("PACKET ERROR FROM MAIN THREAD\n");
+				printlog(LOG_DEBUG, "Received error signal from main thread in TCP querier of DNS %s.\n",
+						addrbuf);
 				//packet error, close connection
 				epoll_ctl(efd, EPOLL_CTL_DEL, mfd, NULL);
 				ioth_close(mfd);
@@ -276,11 +294,9 @@ void* run_querier(void* args){
 			}
 			//RESPONSE OR HANGUP FROM MASTER DNS
 			else{
-				printf("EVENT FROM MASTER DNS\n");
 				//master dns hangup
-				printf("event: %x\n", events[i].events);
 				if(events[i].events & EPOLLRDHUP){
-					printf("hangup\n");
+					printlog(LOG_DEBUG, "Hangup from TCP DNS %s\n", addrbuf);
                     epoll_ctl(efd, EPOLL_CTL_DEL, mfd, NULL);
 					ioth_close(mfd);
 					connected = 0;
@@ -291,9 +307,12 @@ void* run_querier(void* args){
 					*/
 				} else if(events[i].events & EPOLLIN){
 				//response from master dns
-					printf("response\n");
-					nbytes = ioth_recv(mfd, buf, IOTHDNS_TCP_MAXBUF, 0);
-					printf("pktlen %d\n", nbytes);
+					printlog(LOG_DEBUG, "TCP response from DNS %s.\n", addrbuf);
+					if((nbytes = ioth_recv(mfd, buf, IOTHDNS_TCP_MAXBUF, 0)) <= 0){
+						char errbuf[64];
+						strerror_r(errno, errbuf, 64);
+						printlog(LOG_ERROR, "Error receiving data from TCP DNS %s: %s\n", addrbuf,  errbuf);
+					}
 					send(sfd, buf, nbytes, 0);
 				}
 			}
@@ -306,10 +325,7 @@ static void manage_tcp_req_queue(){
 	struct hashq *iter;
     while((iter = next_expired_req(&current)) != NULL){
 		struct dnsreq *req = (struct dnsreq*)iter->data;
-		if(verbose){
-			printf("################\n");
-			printf("Expired ID: %d Query: %s\n", req->h.id, req->h.qname);
-		}
+		printlog(LOG_DEBUG, "Expired UDP Request ID: %d Query: %s\n", req->h.id, req->h.qname);
 		free_id(req->h.id);
 		//if there are more available dns we query them aswell
 		if(qdns[++req->dnsn].sin6_family != 0){
@@ -337,7 +353,7 @@ static void manage_fd_timeout(){
 	struct hashq *iter;
     while((iter = next_expired_fd(&current)) != NULL){
 		struct tcpfd_data *data = (struct tcpfd_data*)iter->data;
-		if(verbose) printf("TCP FD: %d Timeout\n", data->fd);
+		printlog(LOG_DEBUG, "TCP FD %d connection timeout.\n", data->fd);
 		ioth_close(data->fd);
 		epoll_ctl(efd, EPOLL_CTL_DEL, data->fd, NULL);
 		free_fd(data->fd);	
@@ -361,17 +377,23 @@ void* run_tcp(void* args){
     saddr.sin6_addr = in6addr_any;
     saddr.sin6_port = htons(DNS_PORT);
     if((sfd = ioth_msocket(fwd_stack, AF_INET6, SOCK_STREAM|SOCK_NONBLOCK, 0)) < 0){
-        perror("socket sfd");
+		char errbuf[64];
+		strerror_r(errno, errbuf, 64);
+		printlog(LOG_ERROR, "Error creating TCP accepting socket: %s\n", errbuf);
         exit(1);
     }
 	setsockopt(sfd, SOL_SOCKET, SO_REUSEADDR, &(int){1}, sizeof(int));
     if(ioth_bind(sfd, (struct sockaddr*)&saddr, sizeof(saddr)) < 0){
-        perror("bind tcp");
+		char errbuf[64];
+		strerror_r(errno, errbuf, 64);
+		printlog(LOG_ERROR, "Error binding TCP accepting socket: %s\n", errbuf);
         exit(1);
     }
 	//TODO what should this be
     if(ioth_listen(sfd, LISTEN_QUEUE) < 0){
-        perror("listen6");
+		char errbuf[64];
+		strerror_r(errno, errbuf, 64);
+		printlog(LOG_ERROR, "Error setting TCP listening socket: %s\n", errbuf);
         exit(1);
     }
 
@@ -384,13 +406,17 @@ void* run_tcp(void* args){
 	while(qdns[i].sin6_family != 0 && i < MAX_DNS){
 		//socket for dns packets forwarding
 		if(socketpair(AF_LOCAL, SOCK_STREAM, 0, sp1) < 0){
-			perror("socketpair");
+			char errbuf[64];
+			strerror_r(errno, errbuf, 64);
+			printlog(LOG_ERROR, "Error creating socketpair: %s\n", errbuf);
 			exit(1);
 		}
 		//socket for signal passing
 		qfd[i] = sp1[0];
 		if(socketpair(AF_LOCAL, SOCK_STREAM, 0, sp2) < 0){
-			perror("socketpair");
+			char errbuf[64];
+			strerror_r(errno, errbuf, 64);
+			printlog(LOG_ERROR, "Error creating socketpair: %s\n", errbuf);
 			exit(1);
 		}
 		msgfd[i] = sp2[0];
@@ -400,6 +426,7 @@ void* run_tcp(void* args){
 		void* tmp = event.data.ptr = malloc(sizeof(struct serverconn));
 		EFD(event) = qfd[i];
 		ESTATE(event) = RECV_ANS_LEN;
+		EBUF(event) = NULL;
 		((struct serverconn*)event.data.ptr)->tfd = msgfd[i];
 		epoll_ctl(efd, EPOLL_CTL_ADD, qfd[i], &event);
 		//signal passing fd
@@ -437,12 +464,15 @@ void* run_tcp(void* args){
             switch(((struct conn*)(events[i].data.ptr))->state){
                 case LISTENER:
 					{
-                    printf("connection, event: %x\n", events[i].events);
 					struct sockaddr_storage caddr;
 					socklen_t caddrlen = sizeof(caddr);
 					//accept is non-blocking, will immediately fail if no client
                     if((cfd = ioth_accept(sfd, (struct sockaddr*)&caddr, &caddrlen)) <= 0){
-                        perror("accept");
+						if(errno != EWOULDBLOCK){
+							char errbuf[64];
+							strerror_r(errno, errbuf, 64);
+							printlog(LOG_ERROR, "Error accepting new TCP connection: %s\n", errbuf);
+						}
                         break;
                     }
 					//add fd in timeout queue
@@ -450,6 +480,7 @@ void* run_tcp(void* args){
                     event.data.ptr = malloc(sizeof(struct clientconn));
                     EFD(event) = cfd;
                     ESTATE(event) = RECV_REQ_LEN;
+					EBUF(event) = NULL;
 					CEADDR(event) = caddr;
 					CEADDRLEN(event) = caddrlen;
                     epoll_ctl(efd, EPOLL_CTL_ADD, cfd, &event);
@@ -459,12 +490,13 @@ void* run_tcp(void* args){
                 case RECV_REQ_LEN:
                     if(events[i].events & EPOLLRDHUP){
                         //connection closed from client, m8b check pending queries
-                        printf("EPOLLRDHUP CLIENT\n");
+						char addrbuf[64];
+						printsockaddr6(addrbuf, (struct sockaddr_in6*)&CEADDR(events[i]));
+						printlog(LOG_DEBUG, "TCP client %s hangup.\n", addrbuf);
                         ioth_close(EFD(events[i]));
                         epoll_ctl(efd, EPOLL_CTL_DEL, EFD(events[i]), NULL);
 						free_fd(EFD(events[i]));
                     } else {
-                        printf("POLLIN CLIENT LEN\n");
 						//update activity time
 						update_fd(EFD(events[i]));
                         recv_req_len(EFD(events[i]), (struct clientconn*)(events[i].data.ptr));
@@ -473,12 +505,13 @@ void* run_tcp(void* args){
                 case RECV_REQ_PKT:
                     if(events[i].events & EPOLLRDHUP){
                         //connection closed from client, m8b check pending queries
-                        printf("EPOLLRDHUP CLIENT\n");
+						char addrbuf[64];
+						printsockaddr6(addrbuf, (struct sockaddr_in6*)&CEADDR(events[i]));
+						printlog(LOG_DEBUG, "TCP client %s hangup.\n", addrbuf);
                         ioth_close(EFD(events[i]));
                         epoll_ctl(efd, EPOLL_CTL_DEL, EFD(events[i]), NULL);
 						free_fd(EFD(events[i]));
                     } else {
-                        printf("POLLIN CLIENT PKT\n");
 						//update activity time
 						update_fd(EFD(events[i]));
                         recv_req_pkt(EFD(events[i]), (struct clientconn*)(events[i].data.ptr));
@@ -486,12 +519,10 @@ void* run_tcp(void* args){
                     break;
 				case RECV_ANS_LEN:
 					//receive response
-					printf("POLLIN SERVER LEN\n");
 					recv_ans_len(EFD(events[i]), (struct serverconn*)(events[i].data.ptr));
 					break;
 				case RECV_ANS_PKT:
 					//receive response
-					printf("POLLIN SERVER PKT\n");
 					recv_ans_pkt(EFD(events[i]), (struct serverconn*)(events[i].data.ptr));
 					break;
 				/*

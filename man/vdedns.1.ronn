@@ -1,0 +1,91 @@
+vdedns(1) -- dns proxy to enable solving of hash addresses
+====
+
+
+## SYNOPSYS
+
+`vdedns` [<options> ...]
+
+
+## DESCRIPTION
+
+`vdedns` is an Internet of Threads (IoTh) enabled DNS proxy whose aim is to solve domains
+according to the specifics of IPv6 Hash based addresses and One Time IP addresses
+    * Hash based addresses are IPv6 addresses generated from a hash function
+      of a fully qualified domain name and a base address, used to simplify
+      network deployment for a system administrator.
+    * One Time IP addresses are temporary IPv6 addresses generated from a hash
+      function of a fully qualified domain name, a base address, a password and
+      the current time, used to add a layer of security to a private service.
+
+`vdedns` solves special domains configured as such in its configuration file
+according to their specification, every other domain is directly and transparently
+forwarded to one or more selected master DNS.
+The proxy is completely asynchronous (poll based) and able to solve and forward 
+both UDP and TCP requests.
+
+Users can choose to run `vdedns` regularly on the kernel networking stack with
+network administration rights or can also choose to run it as an IoTh process
+with its own virtual networking stack. Running the proxy on its own virtual stack
+requires the use of VDE utilities for both configuration and routing, but allows
+the user to run it without any special permission.
+
+In the case of Hash based addresses, a cache to enable resolution on reverse queries
+towards such addresses is kept in memory during the proxy runtime.
+Users have options to limit such feature to prevent possible vulnerabilities such as
+stack overflow attacks or cache poisoning (see options below).
+
+
+## OPTIONS
+    
+* `-h`, `--help`:
+  Print a help message and exit.
+
+* `-v` <level>, `--verbose` <level>:
+  Set printing level. Choices are 0 for no printing, 1 for error printing,
+  2 for general info printing, 3 for extensive debug printing.
+  Only messages with value less than or equal to level will be printed.
+  Default level value is 1.
+
+* `-L`, `--log`:
+  Print to log file in `/var/log/vdedns.log` instead of standard output.
+
+* `-p` <path>, `--pid` <path>:
+  Save process pid to desired path (e.g. when daemonizing).
+
+* `-d`, `--daemonize`:
+  Run `vdedns` as a daemon.
+
+* `-a`, `--auth`:
+  Limit use of `vdedns` solving to matching ip addresses in configuration file (see configuration).
+  Non-authorized users will receive a DNS rejection response. As log at info level prints
+  failed attempts, this can be used in combination with tools such as *fail2ban* to block
+  potential attackers.
+
+* `-S`, `--server`:
+  Prevent request forwarding to a master DNS, making `vdedns` a non-recursive DNS server.
+  In this case only configured domain,base-address pairs will be served.
+
+* `-s`, `--stacks`:
+  Run `vdedns` using networking stacks configured in configuration file (see configuration).
+
+* `-r`, `--reverse`:
+  Set reverse resolution policy for Hash based addresses.
+  This sets if and how solved Hash based addresses are cached in the reverse domain table 
+  for reverse resolutions.
+  Options are 'never' for preventing caching at all, 'always' to never limit caching,
+  'same' for caching only when the DNS query comes from the solved address itself,
+  'net' for caching only when the DNS query comes from an address from the same /64 network.
+  Default option is 'always', but in case of wide area usage 'same' and 'net' are 
+  strongly suggested for security reasons.
+
+* `-R` <seconds>, `--revtimeout` <seconds>:
+  Set duration of cached entries in the reverse domain table. Default is 3600 seconds.
+
+* `-t` <milliseconds>, `--timeout` <milliseconds>:
+  Set timeout of a forwarded DNS request. At expiration the request will be either forwarded
+  to the next master DNS in list or otherwise aborted. According to user latency this might
+  have to be adjusted not to drop requests.
+  Default is 1000 milliseconds.
+
+

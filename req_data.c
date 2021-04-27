@@ -18,7 +18,8 @@ void init_reqhashq(){
 }
 
 void free_req(struct hashq* target){
-	void* data = free_hashq(target);
+	struct dnsreq *data = (struct dnsreq*)free_hashq(target);
+	if(data->h.qname) free(data->h.qname);
 	free(data);
 }
 

@@ -4,11 +4,13 @@
 #include <sys/types.h>
 #include <iothdns.h>
 
-void printsockaddr6(struct sockaddr_in6 *store);
+void printsockaddr6(char* buf, struct sockaddr_in6 *store);
 
-void printaddr6(struct in6_addr *addr);
+void printaddr6(char* buf, struct in6_addr *addr);
 
-void printaddr(struct in_addr *addr);
+int start_logging();
+
+void printlog(int level, const char *format, ...);
 
 ssize_t get_subdom(char* dst, char* full, char* match);
 
@@ -21,5 +23,7 @@ long get_time_ms();
 long set_timer(long ms);
 
 int check_timer_expire(long expire);
+
+void save_pid(char* path);
 
 #endif

@@ -4,6 +4,7 @@
 #include "req_data.h"
 #include "parse_dns.h"
 
+//struct for connections from clients
 struct clientconn {
     int fd;
     uint8_t state;

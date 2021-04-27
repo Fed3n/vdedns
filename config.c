@@ -88,7 +88,7 @@ int init_config(){
 	config_init(&cfg);
 
 	if(!config_read_file(&cfg, CONFIGFILE)){
-		fprintf(stderr, "%s:%d - %s\n", config_error_file(&cfg),
+		printlog(LOG_ERROR, "Error with config file %s, line %d: %s.", config_error_file(&cfg),
 				config_error_line(&cfg), config_error_text(&cfg));
 		config_destroy(&cfg);
 		return 1;	
@@ -113,11 +113,11 @@ int init_config(){
 			total++;
 		}
 		if(total < 1){
-			fprintf(stderr, "Configuration requires at least one valid dns server address in the dns_servers field.");
+			printlog(LOG_ERROR, "Configuration requires at least one valid dns server address in the dns_servers field.");
 			return 1;
 		}
 	} else {
-		fprintf(stderr, "Configuration requires dns_servers field with at least one valid address.");
+		printlog(LOG_ERROR, "Configuration requires at least one valid dns server address in the dns_servers field.");
 		return 1;	
 	}
 
@@ -253,7 +253,7 @@ int init_config(){
 				struct ioth	*stack = ioth_newstack(type, vnl);
 				ioth_config(stack, (char*)conf);
 				fwd_stack=query_stack=stack;
-				printf("Forwarder and query stack of %s type on %s vnl with config %s\n", type, vnl, conf);
+				printlog(LOG_INFO, "Forwarder and query stack of %s type on %s vnl with config %s\n", type, vnl, conf);
 			}
 		} else {
 			if((setting = config_lookup(&cfg, "vinterface.dns"))){
@@ -263,7 +263,7 @@ int init_config(){
 					struct ioth	*stack = ioth_newstack(type, vnl);
 					ioth_config(stack, (char*)conf);
 					fwd_stack=stack;
-					printf("Forwarder stack of %s type on %s vnl with config %s\n", type, vnl, conf);
+					printlog(LOG_INFO, "Forwarder stack of %s type on %s vnl with config %s\n", type, vnl, conf);
 				}	
 			}
 			if((setting = config_lookup(&cfg, "vinterface.query"))){
@@ -273,7 +273,7 @@ int init_config(){
 					struct ioth	*stack = ioth_newstack(type, vnl);
 					ioth_config(stack, (char*)conf);
 					query_stack=stack;
-					printf("Query stack of %s type on %s vnl with config %s\n", type, vnl, conf);
+					printlog(LOG_INFO, "Query stack of %s type on %s vnl with config %s\n", type, vnl, conf);
 				}	
 			}
 		}

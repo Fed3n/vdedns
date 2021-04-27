@@ -28,10 +28,14 @@
 struct ioth* fwd_stack = NULL;
 struct ioth* query_stack = NULL;
 
-int auth = 1;
 int verbose = 0;
+int auth = 1;
+int logging_level = 1;
 int stacks = 0;
 int forwarding = 1;
+int daemonize = 0;
+int savepid = 0;
+char pidpath[PATH_MAX];
 long dnstimeout = TIMEOUT;
 
 pthread_mutex_t ralock;
@@ -66,7 +70,7 @@ uint16_t get_unique_id(){
 		}
 	}
 	if(i >= MAX_RETRY) {
-		if(verbose) printf("ID TABLE FAIL!\n");
+		printlog(LOG_ERROR, "Failed to generate unique ID.\n");
 		id_table[id]++;
 	}
 	pthread_mutex_unlock(&idlock);
@@ -83,14 +87,18 @@ void free_id(uint16_t id){
 void printusage(char *progname){
 	fprintf(stderr,"Usage: %s OPTIONS\n"
 			"\t--help|-h\tPrint this help message.\n"
-			"\t--verbose|-v\tEnable extensive program printing.\n"
-			"\t--stacks|-s\tCreate virtual stacks according to stackconfig.txt file.\n"
+			"\t--verbose|-v\tChoose program printing level (default is 1).\n"
+			"\t\t\tOptions are 0 (No printing), 1 (Errors), 2 (Info), 3 (Debugging).\n"
+			"\t--stacks|-s\tCreate virtual stacks according to configuration file.\n"
 			"\t--server|-S\tDisable forwarding in order to act as a no-recursion server.\n"
-			"\t--reverse|-r\tSet reverse resolution policy for hash addresses.\n"
-			"\t\t\tOptions are 'never', 'always', 'same' and 'net', default is 'always'.\n"
+			"\t--reverse|-r\tSet reverse resolution policy for hash addresses (default is 'always').\n"
+			"\t\t\tOptions are 'never', 'always', 'same' and 'net'.\n"
 			"\t--timeout|-t\tSet request timeout in milliseconds (default is 1000).\n"
-			"\t--revtimeout|-T\tSet reverse domain table expire time in seconds (default is 3600).\n"
-			"\t--auth|-a\tEnable authorization mode according to authconfig.txt file.\n",
+			"\t--revtimeout|-R\tSet reverse domain table expire time in seconds (default is 3600).\n"
+			"\t--auth|-a\tEnable authorization mode according to configuration file.\n"
+			"\t--daemonize|-d\tDaemonize process.\n"
+			"\t--pid|-p\tSave pid file in given path.\n"
+			"\t--log|-L\tPrint to program log instead of standard output.\n",
 			progname);
 	exit(1);
 }
@@ -98,16 +106,19 @@ void printusage(char *progname){
 int main(int argc, char** argv){
     pthread_t udp_t, tcp_t;
     char* progname = basename(argv[0]);
-	static char *short_options = "r:t:T:hvsSa";
+	static char *short_options = "r:t:R:p:v:hsSadL";
 	static struct option long_options[] = {
 		{"help", no_argument , 0, 'h'},
-		{"verbose", no_argument , 0, 'v'},
+		{"verbose", 1 , 0, 'v'},
 		{"stacks", no_argument , 0, 's'},
 		{"server", no_argument , 0, 'S'},
 		{"reverse", 1 , 0, 'r'},
 		{"timeout", 1 , 0, 't'},
-		{"revtimeout", 1 , 0, 'T'},
+		{"revtimeout", 1 , 0, 'R'},
 		{"auth", no_argument , 0, 'a'},
+		{"daemonize", no_argument , 0, 'd'},
+		{"pid", 1 , 0, 'p'},
+		{"log", no_argument , 0, 'L'},
 		{0, 0, 0, 0}
 	};
 	int option_index;
@@ -121,7 +132,7 @@ int main(int argc, char** argv){
                 printusage(progname);
                 break;
             case 'v':
-                verbose = 1;
+                logging_level = atoi(optarg);
                 break;
             case 's':
 				stacks = 1;
@@ -136,25 +147,47 @@ int main(int argc, char** argv){
             case 't':
 				dnstimeout = atol(optarg);
                 break;
-            case 'T':
+            case 'R':
 				ra_set_timeout(atoi(optarg));
                 break;
             case 'a':
 				auth = 0;
                 break;
+			case 'd':
+				daemonize=1;
+				break;
+            case 'p':
+				savepid=1;
+				strncpy(pidpath, optarg, PATH_MAX);
+                break;
+			case 'L':
+				start_logging();
+				break;
+			default:
+				printusage(progname);
         }
     }
 	if(init_config()) exit(1);
+	if(daemonize && daemon(0, 0)){
+		perror("daemon");
+		exit(1);
+	}
+	if(savepid) save_pid(pidpath);
     //if stack not assigned manually, defaults to kernel
     if(fwd_stack == NULL) fwd_stack = ioth_newstack("kernel", NULL);
     if(query_stack == NULL) query_stack = ioth_newstack("kernel", NULL);
 	
 	init_random();
+	//mutex lock for packet id generation
 	pthread_mutex_init(&idlock, NULL);
+	//mutex lock for stacks operations
 	pthread_mutex_init(&slock, NULL);
+	//mutex lock for writing on reverse address table
 	pthread_mutex_init(&ralock, NULL);
+
 	memset(id_table, 0, ID_TABLE_SIZE);
 
+	//program should not close in case of sigpipe
 	signal(SIGPIPE, SIG_IGN);
 
     pthread_create(&udp_t, 0, run_udp, NULL);
@@ -162,7 +195,9 @@ int main(int argc, char** argv){
 	//clean reverse address resolution record
 	for(;;){
 		sleep(1);
+		pthread_mutex_lock(&ralock);
 		ra_clean();
+		pthread_mutex_unlock(&ralock);
 	}
 }
 

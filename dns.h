@@ -23,7 +23,9 @@ typedef void ans_function_t(int fd, unsigned char* buf, ssize_t len,
 extern struct ioth* fwd_stack;
 extern struct ioth* query_stack;
 
-extern int verbose, auth, stacks, forwarding;
+extern int verbose;
+
+extern int logging_level, auth, stacks, forwarding;
 extern long dnstimeout;
 extern pthread_mutex_t slock;
 extern pthread_mutex_t ralock;

@@ -28,13 +28,11 @@ static enum {NEVER, ALWAYS, SAME, NET} reverse_policy = ALWAYS;
 static char *reverse_policy_str[] = {"never", "always", "same", "net"};
 
 static int check_reverse_policy(struct in6_addr *addr, struct in6_addr *fromaddr) {
-	if(verbose){
-		printf("Checking RP\n");
-		printf("\tsolved: ");
-		printaddr6(addr);
-		printf("\tsender: ");
-		printaddr6(fromaddr);
-	}
+	char solved[64];
+	char sender[64];
+	printaddr6(solved, addr);
+	printaddr6(sender, addr);
+	printlog(LOG_DEBUG, "Checking Reverse Policy\n\tsolved: %s\n\tsender: %s\n", solved, sender);
 	switch (reverse_policy) {
 		case ALWAYS:
 			return 1;
@@ -55,7 +53,7 @@ int set_reverse_policy(char *policy_str) {
 			return 0;
 		}
 	}
-	fprintf(stderr, "unknown reverse policy: %s\n", policy_str);
+	printlog(LOG_ERROR, "Error unknown reverse policy: %s\n", policy_str);
 	return -1;
 }
 
@@ -63,8 +61,7 @@ int set_reverse_policy(char *policy_str) {
 
 static int getrevaddr(char *name, struct in6_addr *addr) {
 	int i,j;
-	if (verbose)
-		printf("Resolving PTR: %s\n", name);
+	printlog(LOG_DEBUG, "Resolving PTR: %s\n", name);
 	if (strlen(name) != 72 || strcmp(name+64,REVTAIL) != 0)
 		return 0;
 	for (i=0,j=60; i<16; i++,j-=4) {
@@ -142,8 +139,7 @@ void parse_ans(unsigned char* buf, ssize_t len, ans_function_t *ans_fun){
 		if((iter = get_req(h.id, h.qname)) != NULL){
 		struct dnsreq *req = (struct dnsreq*)iter->data;
 		//FOUND SUSPENDED REQUEST
-			if(verbose) 
-				printf("qname: %s id: %d\n", h.qname, h.id);
+			printlog(LOG_DEBUG, "Found suspended request qname: %s id: %d\n", h.qname, h.id);
 			free_id(req->h.id);
 			//replaces answer with original request id
 			h.id = req->origid;
@@ -167,7 +163,10 @@ void parse_ans(unsigned char* buf, ssize_t len, ans_function_t *ans_fun){
 								pthread_mutex_lock(&ralock);
 								ra_add(pinfo.origdom, &pinfo.baseaddr[i]);
 								pthread_mutex_unlock(&ralock);
-								if(verbose) printf("added address to revdb\n");
+								char addrbuf[64];
+								printaddr6(addrbuf, &pinfo.baseaddr[i]);
+								printlog(LOG_INFO, "Address %s with domain %s added address to revdb\n", 
+										addrbuf, pinfo.origdom);
 							}
 						}
 					}
@@ -222,8 +221,12 @@ int parse_req(int fd, unsigned char* buf, ssize_t len, struct sockaddr_storage* 
 	pinfo.rr = NULL;
 	iothdns_free(pkt);
 
+	char addrbuf[64];
+	printsockaddr6(addrbuf, (struct sockaddr_in6*)from);
+
 	//if authorization is on and address is not authorized refuses request
 	if(!(auth || check_auth(from))){
+		printlog(LOG_INFO, "Unauthorized request from: %s\n", addrbuf);
 		h.flags = (IOTHDNS_RESPONSE | IOTHDNS_RCODE_EPERM);
 		pkt = iothdns_put_header(&h);
 		ans_fun(fd, iothdns_buf(pkt), iothdns_buflen(pkt), from, fromlen);	
@@ -232,12 +235,12 @@ int parse_req(int fd, unsigned char* buf, ssize_t len, struct sockaddr_storage* 
 	}
 
 	if(IOTHDNS_IS_QUERY(h.flags)){
-		if(verbose) printf("Query for %s\n", h.qname);
+		printlog(LOG_DEBUG, "Received query for domain %s\n", h.qname);
 
 		//checking if it's a reverse query
 		//if it is and it's in the reverse db it gets solved, else forwarded as usual
 		if(h.qtype == IOTHDNS_TYPE_PTR){
-			if(verbose) printf("Reverse query\n");
+			printlog(LOG_DEBUG, "%s is a reverse query (TYPE PTR)\n", h.qname);
 			char* name;
 			struct in6_addr raddr;
 			if(getrevaddr(h.qname, &raddr) && (name=ra_search(&raddr)) != NULL){
@@ -285,7 +288,10 @@ int parse_req(int fd, unsigned char* buf, ssize_t len, struct sockaddr_storage* 
 								pthread_mutex_lock(&ralock);
 								ra_add(pinfo.origdom, &pinfo.baseaddr[i]);
 								pthread_mutex_unlock(&ralock);
-								if(verbose) printf("added address to revdb\n");
+								char addrbuf[64];
+								printaddr6(addrbuf, &pinfo.baseaddr[i]);
+								printlog(LOG_INFO, "Address %s with domain %s added address to revdb\n", 
+										addrbuf, pinfo.origdom);
 							}
 						}
 					}

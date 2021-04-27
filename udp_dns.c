@@ -47,14 +47,15 @@ void send_udp_ans(int fd, unsigned char* buf, ssize_t len,
 static void _fwd_udp_req(unsigned char* buf, ssize_t len, 
 		struct sockaddr_storage* from, socklen_t fromlen, struct pktinfo* pinfo, uint8_t dnsn){
 	struct sockaddr_in6 to = qdns[dnsn];
-	if(verbose) {
-		printf("querying dns: ");
-		printsockaddr6(&to);
-	}
+	char addrbuf[64];
+	printsockaddr6(addrbuf, &to);
+	printlog(LOG_DEBUG, "Forwarding UDP request to DNS %s\n", addrbuf);
 	if(ioth_sendto(qfd, buf, len, 0, (struct sockaddr *) &to, sizeof(to)) > 0){
 		add_request(qfd, dnsn, pinfo, from, fromlen);
 	} else {
-		perror("udp fwd req");
+		char errbuf[64];
+		strerror_r(errno, errbuf, 64);
+		printlog(LOG_ERROR, "Error forwarding UDP request to DNS %s: %s\n", addrbuf,  errbuf);
 	}
 }
 
@@ -70,7 +71,11 @@ static void get_udp_ans(){
     socklen_t fromlen = sizeof(from);
 		
 	if((len = ioth_recvfrom(qfd, buf, IOTHDNS_UDP_MAXBUF, 0, (struct sockaddr*) &from, &fromlen)) <= 0){
-		perror("udp recv ans");
+		char addrbuf[64];
+		printsockaddr6(addrbuf, (struct sockaddr_in6*)&from);
+		char errbuf[64];
+		strerror_r(errno, errbuf, 64);
+		printlog(LOG_ERROR, "Error receiving UDP answer from DNS %s: %s\n", addrbuf, errbuf);
 		return;
 	}
     
@@ -83,7 +88,11 @@ static void get_udp_req(){
 	socklen_t fromlen = sizeof(from);
     int len;
 	if((len = ioth_recvfrom(sfd, buf, IOTHDNS_UDP_MAXBUF, 0, (struct sockaddr*) &from, &fromlen)) <= 0){
-		perror("udp recv req");
+		char addrbuf[64];
+		printsockaddr6(addrbuf, (struct sockaddr_in6*)&from);
+		char errbuf[64];
+		strerror_r(errno, errbuf, 64);
+		printlog(LOG_ERROR, "Error receiving UDP request from %s: %s\n", addrbuf, errbuf);
 		return;
 	}
 
@@ -95,10 +104,7 @@ static void manage_udp_req_queue(){
 	struct hashq *iter;
     while((iter = next_expired_req(&current)) != NULL){
 		struct dnsreq *req = (struct dnsreq*)iter->data;
-		if(verbose){
-			printf("################\n");
-			printf("Expired ID: %d Query: %s\n", req->h.id, req->h.qname);
-		}
+		printlog(LOG_DEBUG, "Expired UDP Request ID: %d Query: %s\n", req->h.id, req->h.qname);
 		free_id(req->h.id);
 		//if there are more available dns we query them aswell
 		if(qdns[++req->dnsn].sin6_family != 0){
@@ -130,20 +136,26 @@ void* run_udp(void* args){
     saddr.sin6_addr = in6addr_any;
     saddr.sin6_port = htons(DNS_PORT);
    	
-	//pthread_mutex_lock(&slock);
+	pthread_mutex_lock(&slock);
     //UDP MSOCKET
     if((sfd = ioth_msocket(fwd_stack, AF_INET6, SOCK_DGRAM, 0)) < 0){
-        perror("server msocket udp");
+		char errbuf[64];
+		strerror_r(errno, errbuf, 64);
+		printlog(LOG_ERROR, "Error creating UDP accepting socket: %s\n", errbuf);
         exit(1);
     }
     if((qfd = ioth_msocket(query_stack, AF_INET6, SOCK_DGRAM, 0)) < 0){
-        perror("query msocket udp");
+		char errbuf[64];
+		strerror_r(errno, errbuf, 64);
+		printlog(LOG_ERROR, "Error creating UDP query socket: %s\n", errbuf);
         exit(1);
     }
-	//pthread_mutex_unlock(&slock);
+	pthread_mutex_unlock(&slock);
 	setsockopt(sfd, SOL_SOCKET, SO_REUSEADDR, &(int){1}, sizeof(int));
     if(ioth_bind(sfd, (struct sockaddr*)&saddr, sizeof(saddr)) < 0){
-        perror("bind udp");
+		char errbuf[64];
+		strerror_r(errno, errbuf, 64);
+		printlog(LOG_ERROR, "Error binding UDP accepting socket: %s\n", errbuf);
         exit(1);
     }
 
@@ -156,18 +168,14 @@ void* run_udp(void* args){
 			expire = set_timer(dnstimeout);
             continue;
         }
-        if(verbose) 
-			printf("################\n");
         if(fds[0].revents) {
             //queries are from the forwarder fd
-            if(verbose) 
-				printf("UDP connection (query)\n");
+			printlog(LOG_DEBUG, "Received UDP connection query\n");
             get_udp_req();
         }
         if(fds[1].revents) {
             //answers are from the querier fd
-            if(verbose) 
-				printf("UDP connection (answer)\n");
+			printlog(LOG_DEBUG, "Received UDP connection answer\n");
             get_udp_ans();
         }
 		if(check_timer_expire(expire)){

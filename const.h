@@ -1,4 +1,5 @@
 #define BUFSIZE 256
+#define PATH_MAX 4096
 
 //DNS
 #define DNS_PORT 53
@@ -21,3 +22,8 @@
 
 //MACROS
 #define ADDR6(x) (((struct sockaddr_in6*)(x))->sin6_addr)
+
+//LOG LEVELS
+#define LOG_ERROR 1
+#define LOG_INFO 2
+#define LOG_DEBUG 3
