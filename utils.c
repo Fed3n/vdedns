@@ -18,17 +18,17 @@
 void printsockaddr6(char* buf, struct sockaddr_in6 *store){
 	struct in6_addr *addr = (struct in6_addr*)&store->sin6_addr;
 	if(is_converted_ipv4(addr)){
-    	inet_ntop(AF_INET, ((void*)addr)+12, buf, 64);
+    	inet_ntop(AF_INET, ((uint8_t*)addr)+12, buf, 64);
 	} else {
-    	inet_ntop(AF_INET6, (void*)addr, buf, 64);
+    	inet_ntop(AF_INET6, (uint8_t*)addr, buf, 64);
 	}
 }
 
 void printaddr6(char* buf, struct in6_addr *addr){
 	if(is_converted_ipv4(addr)){
-    	inet_ntop(AF_INET, ((void*)addr)+12, buf, 64);
+    	inet_ntop(AF_INET, ((uint8_t*)addr)+12, buf, 64);
 	} else {
-    	inet_ntop(AF_INET6, (void*)addr, buf, 64);
+    	inet_ntop(AF_INET6, (uint8_t*)addr, buf, 64);
 	}
 }
 

@@ -114,7 +114,7 @@ static void solve_hashing(struct pktinfo* pinfo){
 			pinfo->rr = malloc(sizeof(struct iothdns_rr));
 			//if it's otip response TLL has to be 0
 			*pinfo->rr = (struct iothdns_rr){.name=pinfo->h->qname, .type=IOTHDNS_TYPE_AAAA,
-				.class=IOTHDNS_CLASS_IN, .ttl=(pinfo->type & TYPE_OTIP) ? 0 : TTL};
+				.class=IOTHDNS_CLASS_IN, .ttl=(pinfo->type & TYPE_OTIP) ? 1 : TTL};
 		}
 	}
 }
@@ -268,6 +268,7 @@ int parse_req(int fd, unsigned char* buf, ssize_t len, struct sockaddr_storage* 
 			pinfo.type |= TYPE_HASH;
 			//domain might change in hash (i.e. matching)
 			strncpy(origdom, h.qname, IOTHDNS_MAXNAME);
+			origdom[IOTHDNS_MAXNAME-1] = '\0';
 			pinfo.origdom = origdom;
 			pinfo.h->qname = hdom->domain;
 		}

@@ -300,11 +300,6 @@ void* run_querier(void* args){
                     epoll_ctl(efd, EPOLL_CTL_DEL, mfd, NULL);
 					ioth_close(mfd);
 					connected = 0;
-					/*
-					//reset data flow on main thread
-					char buf[] = {'\0'};
-					send(msgfd, buf, 1, 0);
-					*/
 				} else if(events[i].events & EPOLLIN){
 				//response from master dns
 					printlog(LOG_DEBUG, "TCP response from DNS %s.\n", addrbuf);
@@ -374,7 +369,11 @@ void* run_tcp(void* args){
     //SERVER
     memset(&saddr, 0, sizeof(saddr));
     saddr.sin6_family = AF_INET6;
-    saddr.sin6_addr = in6addr_any;
+	if(bindaddr != NULL){
+		saddr.sin6_addr = *bindaddr;
+	} else {
+		saddr.sin6_addr = in6addr_any;
+	}
     saddr.sin6_port = htons(DNS_PORT);
     if((sfd = ioth_msocket(fwd_stack, AF_INET6, SOCK_STREAM|SOCK_NONBLOCK, 0)) < 0){
 		char errbuf[64];
@@ -383,6 +382,7 @@ void* run_tcp(void* args){
         exit(1);
     }
 	setsockopt(sfd, SOL_SOCKET, SO_REUSEADDR, &(int){1}, sizeof(int));
+    setsockopt(sfd, IPPROTO_IPV6, IPV6_V6ONLY, &(int){0}, sizeof(int));
     if(ioth_bind(sfd, (struct sockaddr*)&saddr, sizeof(saddr)) < 0){
 		char errbuf[64];
 		strerror_r(errno, errbuf, 64);
@@ -449,8 +449,9 @@ void* run_tcp(void* args){
     EFD(event) = sfd;
     ESTATE(event) = LISTENER;
     epoll_ctl(efd, EPOLL_CTL_ADD, sfd, &event);
-
-
+	
+	//set time limit for suspended request queue check
+	expire = set_timer(dnstimeout);
     for(;;){
         count = epoll_wait(efd, events, MAX_EVENTS, dnstimeout);
 		if(count == 0){
@@ -527,10 +528,7 @@ void* run_tcp(void* args){
 					break;
 				/*
 				case THREAD_MSG:
-					//closed master dns connection from thread
-					printf("QUERY THREAD MASTER DNS HANGUP\n");
-					char buf[BUFSIZE];
-					recv(EFD(events[i]), buf, BUFSIZE, 0);
+					//do something if needed
 					break;
 				*/
             }

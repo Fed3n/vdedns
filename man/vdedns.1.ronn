@@ -11,9 +11,11 @@ vdedns(1) -- dns proxy to enable solving of hash addresses
 
 `vdedns` is an Internet of Threads (IoTh) enabled DNS proxy whose aim is to solve domains
 according to the specifics of IPv6 Hash based addresses and One Time IP addresses
+
     * Hash based addresses are IPv6 addresses generated from a hash function
       of a fully qualified domain name and a base address, used to simplify
       network deployment for a system administrator.
+
     * One Time IP addresses are temporary IPv6 addresses generated from a hash
       function of a fully qualified domain name, a base address, a password and
       the current time, used to add a layer of security to a private service.
@@ -32,7 +34,7 @@ the user to run it without any special permission.
 
 In the case of Hash based addresses, a cache to enable resolution on reverse queries
 towards such addresses is kept in memory during the proxy runtime.
-Users have options to limit such feature to prevent possible vulnerabilities such as
+Users have options to limit this feature to prevent possible vulnerabilities such as
 stack overflow attacks or cache poisoning (see options below).
 
 
@@ -56,11 +58,15 @@ stack overflow attacks or cache poisoning (see options below).
 * `-d`, `--daemonize`:
   Run `vdedns` as a daemon.
 
+* `-b` <address>, `--bind` <address>:
+  Bind `vdedns` to target IPv4 or IPv6 address. Default is any, so binding to a loopback 
+  address is stronly suggested when running the proxy for local use.
+
 * `-a`, `--auth`:
   Limit use of `vdedns` solving to matching ip addresses in configuration file (see configuration).
   Non-authorized users will receive a DNS rejection response. As log at info level prints
-  failed attempts, this can be used in combination with tools such as *fail2ban* to block
-  potential attackers.
+  failed attempts, this can be used in combination with tools such as *fail2ban* to ban
+  persistent attackers.
 
 * `-S`, `--server`:
   Prevent request forwarding to a master DNS, making `vdedns` a non-recursive DNS server.
@@ -79,6 +85,11 @@ stack overflow attacks or cache poisoning (see options below).
   Default option is 'always', but in case of wide area usage 'same' and 'net' are 
   strongly suggested for security reasons.
 
+* `-B` <bytes>, `--buffer` <bytes>:
+  Set UDP packet max size. This is needed when dealing with requests using DNS extensions such
+  as EDNS0, which might have larger packet sizes than the previous UDP standard. Default is 512 bytes.
+  Suggested for extensions use is 4096 bytes.
+
 * `-R` <seconds>, `--revtimeout` <seconds>:
   Set duration of cached entries in the reverse domain table. Default is 3600 seconds.
 
@@ -89,3 +100,125 @@ stack overflow attacks or cache poisoning (see options below).
   Default is 1000 milliseconds.
 
 
+## CONFIGURATION
+
+`vdedns` behaviour heavily depends on how it is configured in its configuration file.
+
+All possibile aspects of the configuration and its fields follow:
+
+### DNS Servers
+
+This *dns_servers* field takes comma separated IPv4 or IPv6 addresses which will 
+be queried in succession for forwarded DNS queries.
+
+    dns_servers = (
+        "10.9.8.7",
+        "abcd:ef00::",
+        "1.2.3.4"
+    );
+
+### Domains
+
+This *domains* field is divided in *hash* (hash based addresses) and *otip* (one time ip addresses).
+
+Hash addresses are taken as comma separated domain names.
+A query to a base domain configured as an hash domain (i.e. mydomain.org) still returns
+an unchanged base address. A query to a subdomain of an hash domain instead returns an
+hashed address (i.e. hash.mydomain.org).
+If a configured hash domain is a subdomain of another configured one, when parsing a query
+the longest matching one takes priority.
+
+OTIP addresses are taken as objects made of mandatory *dom*, *pswd* and optional *time* fields.
+The *dom* field is as above the OTIP domain name, the *pswd* field is the domain access password
+and *time* is the address duration. This last field is optional, if not specified default
+address duration is 32 seconds.
+
+    domains = {
+        hash = (
+            "myhashdomain.org",
+            "hash.domain.org",
+            "another.hash.domain.org"
+        );
+        otip = (
+            {
+                dom="default.otip.org";
+                pswd="password";
+            },
+            {
+                dom="longer.otip.org";
+                pswd="secret";
+                time=128;
+            }
+        );
+    };
+
+### Addresses
+
+This *addresses* field is a list of local domains,addresses objects which `vdedns` will 
+prioritize when solving queries before forwarding.
+Each object is made of a mandatory *dom* field and at least one between a *ip4*
+or *ip6* field.
+The *dom* field is as before a domain name, the *ip4* and *ip6* fields are a list of
+comma separated addresses.
+
+    addresses = (
+        {
+            dom="hash.domain.org";
+            ip6=("2001:aaaa::12");
+        },
+        {
+            dom="owndomain.mine";
+            ip4=("42.41.40.39", "127.0.42.1");
+            ip6=("fc00:ffff:dddd::");
+        }
+    );
+
+### Virtual interfaces
+
+This *vinterface* field sets which parts of `vdedns` to virtualize and how 
+when using the `--stacks` option.
+If *both* field is set, then both the accepting socket stack and querying socket stack use
+this same configuration. Otherwise the *dns* field specifies the stack to use for the accepting
+socket stack and the *query* field specifies the stack to use for the querying socket stack.
+Inside the stack field *type* is the virtual networking stack to use (e.g. *vdestack*), 
+the *vnl* is which virtual network locator should the stack be created on and *config* is an
+`iothconf` configuration string. 
+Please refer to `libioth` and `Virtual Distributed Ethernet` documentation 
+for virtual networking stacks configuration.
+    
+    vinterface = {
+        both = {
+            type="vdestack";
+            vnl="vde://";
+            config="eth,ip=10.0.0.1/24,ip=fc00:aaaa::1/64,gw=10.0.0.254,fqdn=my.vdedns";
+        };
+    };
+
+### Authorization
+
+This *authorization* field takes address, address mask pairs to decide which addresses
+should be authorized to submit queries to `vdedns` when using the `--auth` option.
+The *ip* field takes an ip address and the *mask* field takes a same address type mask.
+
+    authorization = (
+        {
+            ip="127.0.0.1";
+            mask="255.255.255.255";
+        },
+        {
+            ip="10.0.0.0";
+            mask="255.255.255.0";
+        },
+        {
+            ip="2001:abcd:ef00::";
+            mask="ffff:ffff:ffff:ffff::"
+        }
+    );
+
+## SEE ALSO
+
+    vde_plug(1)
+
+## AUTHOR
+
+VirtualSquare team.

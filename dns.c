@@ -9,6 +9,7 @@
 #include <libgen.h>
 #include <string.h>
 #include <pthread.h>
+#include <arpa/inet.h>
 #include <sys/random.h>
 #include <time.h>
 
@@ -35,8 +36,11 @@ int stacks = 0;
 int forwarding = 1;
 int daemonize = 0;
 int savepid = 0;
+
 char pidpath[PATH_MAX];
 long dnstimeout = TIMEOUT;
+unsigned int udp_maxbuf = IOTHDNS_UDP_MAXBUF;
+struct in6_addr *bindaddr = NULL;
 
 pthread_mutex_t ralock;
 pthread_mutex_t slock;
@@ -89,10 +93,13 @@ void printusage(char *progname){
 			"\t--help|-h\tPrint this help message.\n"
 			"\t--verbose|-v\tChoose program printing level (default is 1).\n"
 			"\t\t\tOptions are 0 (No printing), 1 (Errors), 2 (Info), 3 (Debugging).\n"
+			"\t--bind|-b\tBind to target IPv4 or IPv6 address (default is any).\n"
 			"\t--stacks|-s\tCreate virtual stacks according to configuration file.\n"
 			"\t--server|-S\tDisable forwarding in order to act as a no-recursion server.\n"
 			"\t--reverse|-r\tSet reverse resolution policy for hash addresses (default is 'always').\n"
 			"\t\t\tOptions are 'never', 'always', 'same' and 'net'.\n"
+			"\t--buffer|-B\tSet new limit for UDP packet size.\n"
+			"\t\t\tThis is needed when using newer DNS extensions such as EDNS0. (default is 512)\n"
 			"\t--timeout|-t\tSet request timeout in milliseconds (default is 1000).\n"
 			"\t--revtimeout|-R\tSet reverse domain table expire time in seconds (default is 3600).\n"
 			"\t--auth|-a\tEnable authorization mode according to configuration file.\n"
@@ -106,13 +113,15 @@ void printusage(char *progname){
 int main(int argc, char** argv){
     pthread_t udp_t, tcp_t;
     char* progname = basename(argv[0]);
-	static char *short_options = "r:t:R:p:v:hsSadL";
+	static char *short_options = "b:r:t:R:p:B:v:hsSadL";
 	static struct option long_options[] = {
 		{"help", no_argument , 0, 'h'},
 		{"verbose", 1 , 0, 'v'},
+		{"bind", 1 , 0, 'b'},
 		{"stacks", no_argument , 0, 's'},
 		{"server", no_argument , 0, 'S'},
 		{"reverse", 1 , 0, 'r'},
+		{"buffer", 1 , 0, 'B'},
 		{"timeout", 1 , 0, 't'},
 		{"revtimeout", 1 , 0, 'R'},
 		{"auth", no_argument , 0, 'a'},
@@ -134,6 +143,17 @@ int main(int argc, char** argv){
             case 'v':
                 logging_level = atoi(optarg);
                 break;
+            case 'b':
+				bindaddr = malloc(sizeof(struct in6_addr));
+				//try to parse as ipv4 on converted ipv4 template, else try ipv6
+				*bindaddr = (struct in6_addr){{{0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 
+					0x0, 0x0, 0x0, 0x0, 0xff, 0xff, 0x0, 0x0, 0x0, 0x0}}};
+				if(inet_pton(AF_INET, optarg, ((uint8_t*)bindaddr)+12) != 1){
+					if(inet_pton(AF_INET6, optarg, (uint8_t*)bindaddr) != 1){
+						printusage(progname);
+					}
+				}
+                break;
             case 's':
 				stacks = 1;
                 break;
@@ -150,6 +170,9 @@ int main(int argc, char** argv){
             case 'R':
 				ra_set_timeout(atoi(optarg));
                 break;
+            case 'B':
+				udp_maxbuf = atoi(optarg);
+                break;
             case 'a':
 				auth = 0;
                 break;
@@ -159,6 +182,7 @@ int main(int argc, char** argv){
             case 'p':
 				savepid=1;
 				strncpy(pidpath, optarg, PATH_MAX);
+				pidpath[PATH_MAX-1] = '\0';
                 break;
 			case 'L':
 				start_logging();

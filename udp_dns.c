@@ -27,9 +27,9 @@ static __thread int sfd, qfd;
 void send_udp_ans(int fd, unsigned char* buf, ssize_t len, 
 		struct sockaddr_storage* from, socklen_t fromlen){
 	//packet truncation check
-	//if a packet is longer than 512 bytes we send an empty
-	//answer with truncation bit on
-	if(len > IOTHDNS_UDP_MAXBUF){
+	//if a packet is longer than 512 bytes (or larger custom buffer, but this is rare) 
+	//we send an empty answer with truncation bit on
+	if(len > udp_maxbuf){
 		struct iothdns_header h;
 		char qname[IOTHDNS_MAXNAME];
     	struct iothdns_pkt* pkt = iothdns_get_header(&h, buf, len, qname);
@@ -65,12 +65,12 @@ void fwd_udp_req(int fd, unsigned char* buf, ssize_t len,
 }
 
 static void get_udp_ans(){
-    unsigned char buf[IOTHDNS_UDP_MAXBUF];
+    unsigned char buf[udp_maxbuf];
     int len;
     struct sockaddr_storage from;
     socklen_t fromlen = sizeof(from);
 		
-	if((len = ioth_recvfrom(qfd, buf, IOTHDNS_UDP_MAXBUF, 0, (struct sockaddr*) &from, &fromlen)) <= 0){
+	if((len = ioth_recvfrom(qfd, buf, udp_maxbuf, 0, (struct sockaddr*) &from, &fromlen)) <= 0){
 		char addrbuf[64];
 		printsockaddr6(addrbuf, (struct sockaddr_in6*)&from);
 		char errbuf[64];
@@ -83,11 +83,11 @@ static void get_udp_ans(){
 }
 
 static void get_udp_req(){
-    unsigned char buf[IOTHDNS_UDP_MAXBUF];
+    unsigned char buf[udp_maxbuf];
 	struct sockaddr_storage from;
 	socklen_t fromlen = sizeof(from);
     int len;
-	if((len = ioth_recvfrom(sfd, buf, IOTHDNS_UDP_MAXBUF, 0, (struct sockaddr*) &from, &fromlen)) <= 0){
+	if((len = ioth_recvfrom(sfd, buf, udp_maxbuf, 0, (struct sockaddr*) &from, &fromlen)) <= 0){
 		char addrbuf[64];
 		printsockaddr6(addrbuf, (struct sockaddr_in6*)&from);
 		char errbuf[64];
@@ -133,7 +133,11 @@ void* run_udp(void* args){
     struct sockaddr_in6 saddr;	
     memset(&saddr, 0, sizeof(saddr));
     saddr.sin6_family = AF_INET6;
-    saddr.sin6_addr = in6addr_any;
+	if(bindaddr != NULL){
+		saddr.sin6_addr = *bindaddr;
+	} else {
+    	saddr.sin6_addr = in6addr_any;
+	}
     saddr.sin6_port = htons(DNS_PORT);
    	
 	pthread_mutex_lock(&slock);
@@ -152,7 +156,8 @@ void* run_udp(void* args){
     }
 	pthread_mutex_unlock(&slock);
 	setsockopt(sfd, SOL_SOCKET, SO_REUSEADDR, &(int){1}, sizeof(int));
-    if(ioth_bind(sfd, (struct sockaddr*)&saddr, sizeof(saddr)) < 0){
+    setsockopt(sfd, IPPROTO_IPV6, IPV6_V6ONLY, &(int){0}, sizeof(int));
+	if(ioth_bind(sfd, (struct sockaddr*)&saddr, sizeof(saddr)) < 0){
 		char errbuf[64];
 		strerror_r(errno, errbuf, 64);
 		printlog(LOG_ERROR, "Error binding UDP accepting socket: %s\n", errbuf);

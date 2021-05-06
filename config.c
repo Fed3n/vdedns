@@ -46,6 +46,7 @@ struct dns_hashdom* lookup_hash_domain(char* domain){
             }
 			iter = iter->next;
         }
+		//if does not match for domain, try next subdomain
         domain = next_domain_label(domain);
     }
     return NULL;
@@ -113,12 +114,12 @@ int init_config(){
 			total++;
 		}
 		if(total < 1){
-			printlog(LOG_ERROR, "Configuration requires at least one valid dns server address in the dns_servers field.");
-			return 1;
+			printlog(LOG_ERROR, "Warning: no master DNS set in configuration file. No request will be forwarded.\n");
+			forwarding = 0;
 		}
 	} else {
-		printlog(LOG_ERROR, "Configuration requires at least one valid dns server address in the dns_servers field.");
-		return 1;	
+		printlog(LOG_ERROR, "Warning: no master DNS set in configuration file. No request will be forwarded.\n");
+		forwarding = 0;
 	}
 
 	//DOMAINS CONFIG

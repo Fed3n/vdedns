@@ -11,6 +11,8 @@ set(REQLIBS ioth iothdns iothconf iothaddr pthread config)
 include(GNUInstallDirs)
 include(CheckIncludeFile)
 
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -D_FORTIFY_SOURCE=2 -O2 -Wall -pedantic")
+
 foreach(LIB IN LISTS REQLIBS)
     find_library(HAVE_${LIB} ${LIB})
     if(NOT HAVE_${LIB})

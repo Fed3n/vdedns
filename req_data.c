@@ -46,9 +46,15 @@ struct hashq* add_request(int fd, int dnsn, struct pktinfo *pinfo,
 	req->origid = pinfo->origid;
     req->dnsn = dnsn;
 
-	if(pinfo->origdom != NULL) strncpy(req->origdom, pinfo->origdom, IOTHDNS_MAXNAME);
+	if(pinfo->origdom != NULL) {
+		strncpy(req->origdom, pinfo->origdom, IOTHDNS_MAXNAME);
+		req->origdom[IOTHDNS_MAXNAME-1] = '\0';
+	}
 	req->type = pinfo->type;
-	if(pinfo->opt != NULL) strncpy(req->opt, pinfo->opt, BUFSIZE);
+	if(pinfo->opt != NULL) {
+		strncpy(req->opt, pinfo->opt, BUFSIZE);
+		req->opt[BUFSIZE-1] = '\0';
+	}
 	req->otip_time = pinfo->otip_time;
 	
 	//TCP
