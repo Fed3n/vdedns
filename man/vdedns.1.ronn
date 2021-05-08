@@ -49,6 +49,10 @@ stack overflow attacks or cache poisoning (see options below).
   Only messages with value less than or equal to level will be printed.
   Default level value is 1.
 
+* `-c` <path>, `--config` <path>:
+  Manually set configuration file path. Default path is /usr/local/etc/vdedns.cfg 
+  when program is run with suid, else it is ~/.config/vdedns.cfg
+
 * `-L`, `--log`:
   Print to log file in `/var/log/vdedns.log` instead of standard output.
 
@@ -119,7 +123,7 @@ be queried in succession for forwarded DNS queries.
 
 ### Domains
 
-This *domains* field is divided in *hash* (hash based addresses) and *otip* (one time ip addresses).
+The *domains* field is divided in *hash* (hash based addresses) and *otip* (one time ip addresses).
 
 Hash addresses are taken as comma separated domain names.
 A query to a base domain configured as an hash domain (i.e. mydomain.org) still returns
@@ -154,7 +158,7 @@ address duration is 32 seconds.
 
 ### Addresses
 
-This *addresses* field is a list of local domains,addresses objects which `vdedns` will 
+The *addresses* field is a list of local domains,addresses objects which `vdedns` will 
 prioritize when solving queries before forwarding.
 Each object is made of a mandatory *dom* field and at least one between a *ip4*
 or *ip6* field.
@@ -175,7 +179,7 @@ comma separated addresses.
 
 ### Virtual interfaces
 
-This *vinterface* field sets which parts of `vdedns` to virtualize and how 
+The *vinterface* field sets which parts of `vdedns` to virtualize and how 
 when using the `--stacks` option.
 If *both* field is set, then both the accepting socket stack and querying socket stack use
 this same configuration. Otherwise the *dns* field specifies the stack to use for the accepting
@@ -196,7 +200,7 @@ for virtual networking stacks configuration.
 
 ### Authorization
 
-This *authorization* field takes address, address mask pairs to decide which addresses
+The *authorization* field takes address, address mask pairs to decide which addresses
 should be authorized to submit queries to `vdedns` when using the `--auth` option.
 The *ip* field takes an ip address and the *mask* field takes a same address type mask.
 

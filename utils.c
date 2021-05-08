@@ -94,8 +94,7 @@ char* next_domain_label(char* domain){
 
 //ADDRESSING
 int is_converted_ipv4(struct in6_addr *addr){
-    struct in6_addr format = {{{0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 
-		0xff, 0xff, 0x0, 0x0, 0x0, 0x0}}};
+    struct in6_addr format = {{IP4_IP6_MAP}};
     return (memcmp(&format, addr, 12)==0);
 }
 
@@ -131,6 +130,7 @@ int check_timer_expire(long expire){
 void save_pid(char* path){
 	char fullpath[PATH_MAX];
 
+	//get either relative or absolute path
 	if(path[0] != '/'){
 		char cwd[PATH_MAX];
 		snprintf(fullpath, PATH_MAX, "%s/%s", getcwd(cwd, PATH_MAX), path);

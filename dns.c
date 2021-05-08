@@ -38,6 +38,7 @@ int daemonize = 0;
 int savepid = 0;
 
 char pidpath[PATH_MAX];
+char *setconfigpath = NULL;
 long dnstimeout = TIMEOUT;
 unsigned int udp_maxbuf = IOTHDNS_UDP_MAXBUF;
 struct in6_addr *bindaddr = NULL;
@@ -93,6 +94,7 @@ void printusage(char *progname){
 			"\t--help|-h\tPrint this help message.\n"
 			"\t--verbose|-v\tChoose program printing level (default is 1).\n"
 			"\t\t\tOptions are 0 (No printing), 1 (Errors), 2 (Info), 3 (Debugging).\n"
+			"\t--config|-c\tManually set configuration file path.\n"
 			"\t--bind|-b\tBind to target IPv4 or IPv6 address (default is any).\n"
 			"\t--stacks|-s\tCreate virtual stacks according to configuration file.\n"
 			"\t--server|-S\tDisable forwarding in order to act as a no-recursion server.\n"
@@ -113,10 +115,11 @@ void printusage(char *progname){
 int main(int argc, char** argv){
     pthread_t udp_t, tcp_t;
     char* progname = basename(argv[0]);
-	static char *short_options = "b:r:t:R:p:B:v:hsSadL";
+	static char *short_options = "b:r:t:R:p:B:v:c:hsSadL";
 	static struct option long_options[] = {
 		{"help", no_argument , 0, 'h'},
 		{"verbose", 1 , 0, 'v'},
+		{"config", 1 , 0, 'c'},
 		{"bind", 1 , 0, 'b'},
 		{"stacks", no_argument , 0, 's'},
 		{"server", no_argument , 0, 'S'},
@@ -143,11 +146,20 @@ int main(int argc, char** argv){
             case 'v':
                 logging_level = atoi(optarg);
                 break;
+            case 'c':
+				setconfigpath = malloc(PATH_MAX);
+				//get either relative or absolute path
+				if(optarg[0] != '/'){
+					char cwd[PATH_MAX];
+					snprintf(setconfigpath, PATH_MAX, "%s/%s", getcwd(cwd, PATH_MAX), optarg);
+				} else {
+					snprintf(setconfigpath, PATH_MAX, "%s", optarg);	
+				}
+                break;
             case 'b':
 				bindaddr = malloc(sizeof(struct in6_addr));
 				//try to parse as ipv4 on converted ipv4 template, else try ipv6
-				*bindaddr = (struct in6_addr){{{0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 
-					0x0, 0x0, 0x0, 0x0, 0xff, 0xff, 0x0, 0x0, 0x0, 0x0}}};
+				*bindaddr = (struct in6_addr){{IP4_IP6_MAP}};
 				if(inet_pton(AF_INET, optarg, ((uint8_t*)bindaddr)+12) != 1){
 					if(inet_pton(AF_INET6, optarg, (uint8_t*)bindaddr) != 1){
 						printusage(progname);

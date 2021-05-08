@@ -12,10 +12,7 @@
 #include "config.h"
 #include "const.h"
 
-#define CONFIGFILE "dnsconfig.cfg"
-#define IP6_INIT {0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0xff, 0xff, 0x0, 0x0, 0x0, 0x0}
-
-
+#define CONFIGFILE "vdedns.cfg"
 
 static struct dns_otipdom* otip_h;
 static struct dns_hashdom* hash_h;
@@ -88,8 +85,21 @@ int init_config(){
 
 	config_init(&cfg);
 
-	if(!config_read_file(&cfg, CONFIGFILE)){
-		printlog(LOG_ERROR, "Error with config file %s, line %d: %s.", config_error_file(&cfg),
+	char configpath[PATH_MAX];
+	if(geteuid() == 0){
+		sprintf(configpath, "/usr/local/etc/%s", CONFIGFILE);
+	} else {
+		sprintf(configpath, "/home/%s/.config/%s", getlogin(), CONFIGFILE);
+	}
+
+	if(access(setconfigpath ? setconfigpath : configpath, R_OK) != 0){
+		printlog(LOG_ERROR, "Error cannot access configuration file %s\n",
+				setconfigpath ? setconfigpath : configpath);
+		return(1);
+	}
+	
+	if(!config_read_file(&cfg, configpath)){
+		printlog(LOG_ERROR, "Error with config file %s, line %d: %s.\n", config_error_file(&cfg),
 				config_error_line(&cfg), config_error_text(&cfg));
 		config_destroy(&cfg);
 		return 1;	
@@ -105,7 +115,7 @@ int init_config(){
 			config_setting_t* tmp = config_setting_get_elem(list, i);
 			const char* addr = config_setting_get_string(tmp);
 			//verifying address string for either ipv4 or ipv6
-			uint8_t addr6[16] = IP6_INIT;
+			uint8_t addr6[16] = IP4_IP6_MAP;
 			if(inet_pton(AF_INET, addr, addr6+12) || inet_pton(AF_INET6, addr, addr6)){
 				qdns[total].sin6_family = AF_INET6;
 				qdns[total].sin6_port = htons(DNS_PORT);
@@ -287,8 +297,8 @@ int init_config(){
 		int i;
 		for(i = 0; i < count; i++){
 			config_setting_t* tmp = config_setting_get_elem(list, i);
-			uint8_t saddr[16] = IP6_INIT;
-			uint8_t smask[16] = IP6_INIT;
+			uint8_t saddr[16] = IP4_IP6_MAP;
+			uint8_t smask[16] = IP4_IP6_MAP;
 			const char* addr, *mask;
 			addr=mask=NULL;
 			if(!(config_setting_lookup_string(tmp, "ip", &addr) && config_setting_lookup_string(tmp, "mask", &mask))){

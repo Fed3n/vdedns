@@ -28,6 +28,7 @@ extern int verbose;
 extern int logging_level, auth, stacks, forwarding;
 extern long dnstimeout;
 extern unsigned int udp_maxbuf;
+extern char* setconfigpath;
 extern struct in6_addr *bindaddr;
 extern pthread_mutex_t slock;
 extern pthread_mutex_t ralock;

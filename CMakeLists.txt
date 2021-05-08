@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.13)
-project(VdeDNS  VERSION 1.0
-                DESCRIPTION "Proxy DNS for IoTh"
+project(VdeDNS  VERSION 0.1
+                DESCRIPTION "IoTh-enabled proxy DNS for the resolution of IPv6 Hash Addresses"
                 LANGUAGES C)
 set(CMAKE_BUILD_TYPE Debug)
 
@@ -31,7 +31,13 @@ endforeach(HEAD)
 
 
 include_directories(${CMAKE_CURRENT_SOURCE_DIR})
-add_executable(vdedns ${SOURCES})
+add_executable(vdedns ${SOURCES} vdedns.cfg)
 target_link_libraries(vdedns ${REQLIBS})
 
-add_subdirectory(man)
+install(TARGETS vdedns DESTINATION ${CMAKE_INSTALL_BINDIR})
+install(FILES vdedns.cfg DESTINATION etc/)
+
+#add_subdirectory(man)
+
+add_custom_target(uninstall
+  "${CMAKE_COMMAND}" -P "${PROJECT_SOURCE_DIR}/Uninstall.cmake")
