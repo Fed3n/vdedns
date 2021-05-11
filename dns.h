@@ -22,18 +22,11 @@ typedef void ans_function_t(int fd, unsigned char* buf, ssize_t len,
 
 extern struct ioth* fwd_stack;
 extern struct ioth* query_stack;
-
-extern int verbose;
-
 extern int logging_level, auth, stacks, forwarding;
 extern long dnstimeout;
 extern unsigned int udp_maxbuf;
 extern char* setconfigpath;
 extern struct in6_addr *bindaddr;
 extern pthread_mutex_t slock;
-extern pthread_mutex_t ralock;
-
-uint16_t get_unique_id();
-void free_id(uint16_t id);
 
 #endif

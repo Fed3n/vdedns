@@ -15,6 +15,7 @@ struct clientconn {
 	socklen_t fromlen;
 };
 
+//Run tcp dns 
 void* run_tcp(void* args);
 
 void fwd_tcp_req(int fd, unsigned char* buf, ssize_t len, 

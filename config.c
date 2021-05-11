@@ -85,16 +85,17 @@ int init_config(){
 
 	config_init(&cfg);
 
-	char configpath[PATH_MAX];
+	char manualpath[PATH_MAX];
 	if(geteuid() == 0){
-		sprintf(configpath, "/usr/local/etc/%s", CONFIGFILE);
+		sprintf(manualpath, "/usr/local/etc/%s", CONFIGFILE);
 	} else {
-		sprintf(configpath, "/home/%s/.config/%s", getlogin(), CONFIGFILE);
+		sprintf(manualpath, "/home/%s/.config/%s", getlogin(), CONFIGFILE);
 	}
+	
+	char* configpath = setconfigpath ? setconfigpath : manualpath;
 
-	if(access(setconfigpath ? setconfigpath : configpath, R_OK) != 0){
-		printlog(LOG_ERROR, "Error cannot access configuration file %s\n",
-				setconfigpath ? setconfigpath : configpath);
+	if(access(configpath, R_OK) != 0){
+		printlog(LOG_ERROR, "Error cannot access configuration file %s\n", configpath);
 		return(1);
 	}
 	
@@ -133,7 +134,7 @@ int init_config(){
 	}
 
 	//DOMAINS CONFIG
-	setting = config_lookup(&cfg, "domains");
+	setting = config_lookup(&cfg, "rules");
 	list = config_setting_lookup(setting, "hash");
 	if(list != NULL){
 		int count = config_setting_length(list);
@@ -182,7 +183,7 @@ int init_config(){
 	}
 
 	//ADDRESSES CONFIG
-	list = config_lookup(&cfg, "addresses");
+	list = config_lookup(&cfg, "records");
 	if(list != NULL){
 		int count = config_setting_length(list);
 		int i;
