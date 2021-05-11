@@ -135,49 +135,51 @@ int init_config(){
 
 	//DOMAINS CONFIG
 	setting = config_lookup(&cfg, "rules");
-	list = config_setting_lookup(setting, "hash");
-	if(list != NULL){
-		int count = config_setting_length(list);
-		int i;
-		for(i = 0; i < count; i++){
-			config_setting_t* tmp = config_setting_get_elem(list, i);
-			const char* dom = config_setting_get_string(tmp);
-			struct dns_hashdom* new = malloc(sizeof(struct dns_hashdom));
-			new->domain = strndup(dom, IOTHDNS_MAXNAME);
-			if(hash_h == NULL){
-				new->next = NULL;
-				hash_h = new;
-			} else {
-				new->next = hash_h;
-				hash_h = new;
+	if(setting != NULL){
+		list = config_setting_lookup(setting, "hash");
+		if(list != NULL){
+			int count = config_setting_length(list);
+			int i;
+			for(i = 0; i < count; i++){
+				config_setting_t* tmp = config_setting_get_elem(list, i);
+				const char* dom = config_setting_get_string(tmp);
+				struct dns_hashdom* new = malloc(sizeof(struct dns_hashdom));
+				new->domain = strndup(dom, IOTHDNS_MAXNAME);
+				if(hash_h == NULL){
+					new->next = NULL;
+					hash_h = new;
+				} else {
+					new->next = hash_h;
+					hash_h = new;
+				}
 			}
 		}
-	}
-	list = config_setting_lookup(setting, "otip");
-	if(list != NULL){
-		int count = config_setting_length(list);
-		int i;
-		for(i = 0; i < count; i++){
-			config_setting_t* tmp = config_setting_get_elem(list, i);
-			const char* dom, *pswd;
-			dom=pswd=NULL;
-			int time;
-			if(!(config_setting_lookup_string(tmp, "dom", &dom) &&config_setting_lookup_string(tmp, "pswd", &pswd))){
-				continue;
-			}
-			if(!config_setting_lookup_int(tmp, "time", &time)){
-				time = 0;
-			}
-			struct dns_otipdom* new = malloc(sizeof(struct dns_otipdom));
-			new->domain = strndup(dom, IOTHDNS_MAXNAME);
-			new->pswd = strndup(pswd, IOTHDNS_MAXNAME);
-			new->time = time;
-			if(otip_h == NULL){
-				new->next = NULL;
-				otip_h = new;
-			} else {
-				new->next = otip_h;
-				otip_h = new;
+		list = config_setting_lookup(setting, "otip");
+		if(list != NULL){
+			int count = config_setting_length(list);
+			int i;
+			for(i = 0; i < count; i++){
+				config_setting_t* tmp = config_setting_get_elem(list, i);
+				const char* dom, *pswd;
+				dom=pswd=NULL;
+				int time;
+				if(!(config_setting_lookup_string(tmp, "dom", &dom) &&config_setting_lookup_string(tmp, "pswd", &pswd))){
+					continue;
+				}
+				if(!config_setting_lookup_int(tmp, "time", &time)){
+					time = 0;
+				}
+				struct dns_otipdom* new = malloc(sizeof(struct dns_otipdom));
+				new->domain = strndup(dom, IOTHDNS_MAXNAME);
+				new->pswd = strndup(pswd, IOTHDNS_MAXNAME);
+				new->time = time;
+				if(otip_h == NULL){
+					new->next = NULL;
+					otip_h = new;
+				} else {
+					new->next = otip_h;
+					otip_h = new;
+				}
 			}
 		}
 	}
