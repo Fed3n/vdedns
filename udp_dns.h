@@ -4,6 +4,7 @@
 #include "req_data.h"
 #include "parse_dns.h"
 
+//Run udp dns 
 void* run_udp(void* args);
 
 void fwd_udp_req(int fd, unsigned char* buf, ssize_t len, struct sockaddr_storage* from, socklen_t fromlen, 

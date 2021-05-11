@@ -121,23 +121,23 @@ be queried in succession for forwarded DNS queries.
         "1.2.3.4"
     );
 
-### Domains
+### Rules
 
-The *domains* field is divided in *hash* (hash based addresses) and *otip* (one time ip addresses).
+The *rules* field is divided in *hash* (hash based addresses) and *otip* (one time ip addresses).
 
-Hash addresses are taken as comma separated domain names.
+Hash rules are taken as comma separated domain names.
 A query to a base domain configured as an hash domain (i.e. mydomain.org) still returns
 an unchanged base address. A query to a subdomain of an hash domain instead returns an
 hashed address (i.e. hash.mydomain.org).
 If a configured hash domain is a subdomain of another configured one, when parsing a query
 the longest matching one takes priority.
 
-OTIP addresses are taken as objects made of mandatory *dom*, *pswd* and optional *time* fields.
+OTIP rules are taken as objects made of mandatory *dom*, *pswd* and optional *time* fields.
 The *dom* field is as above the OTIP domain name, the *pswd* field is the domain access password
 and *time* is the address duration. This last field is optional, if not specified default
 address duration is 32 seconds.
 
-    domains = {
+    rules = {
         hash = (
             "myhashdomain.org",
             "hash.domain.org",
@@ -156,16 +156,16 @@ address duration is 32 seconds.
         );
     };
 
-### Addresses
+### Records
 
-The *addresses* field is a list of local domains,addresses objects which `vdedns` will 
+The *records* field is a list of local domains,addresses objects which `vdedns` will 
 prioritize when solving queries before forwarding.
 Each object is made of a mandatory *dom* field and at least one between a *ip4*
 or *ip6* field.
 The *dom* field is as before a domain name, the *ip4* and *ip6* fields are a list of
 comma separated addresses.
 
-    addresses = (
+    records = (
         {
             dom="hash.domain.org";
             ip6=("2001:aaaa::12");

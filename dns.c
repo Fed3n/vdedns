@@ -9,8 +9,8 @@
 #include <libgen.h>
 #include <string.h>
 #include <pthread.h>
-#include <arpa/inet.h>
 #include <sys/random.h>
+#include <arpa/inet.h>
 #include <time.h>
 
 #include <ioth.h>
@@ -43,53 +43,9 @@ long dnstimeout = TIMEOUT;
 unsigned int udp_maxbuf = IOTHDNS_UDP_MAXBUF;
 struct in6_addr *bindaddr = NULL;
 
-pthread_mutex_t ralock;
 pthread_mutex_t slock;
 
-//data for unique id generation
-static uint8_t id_table[ID_TABLE_SIZE];
-static pthread_mutex_t idlock;
-
-static void init_random(){
-    unsigned int seed;
-    if(getrandom(&seed, sizeof(unsigned int), 0) == 0){
-        srandom(seed);
-    } else {
-        srandom(time(NULL) ^ getpid());
-    }
-}
-
-//tries to generate unique packet ids across both threads
-//algorithm is optimistic and will give up after some tries
-//hoping not to cause a packet mismatch
-#define MAX_RETRY 8
-uint16_t get_unique_id(){
-	int i;
-	uint16_t id;
-	pthread_mutex_lock(&idlock);
-	for(i = 0; i < MAX_RETRY; i++){
-		id = random();
-		if(id_table[id] == 0) {
-			id_table[id]++;
-			break;
-		}
-	}
-	if(i >= MAX_RETRY) {
-		printlog(LOG_ERROR, "Failed to generate unique ID.\n");
-		id_table[id]++;
-	}
-	pthread_mutex_unlock(&idlock);
-	return id;
-}
-void free_id(uint16_t id){
-	pthread_mutex_lock(&idlock);
-	id_table[id]--;
-	//printf("ID AMOUNT IS NOW %d\n", id_table[id]);
-	pthread_mutex_unlock(&idlock);
-}
-
-
-void printusage(char *progname){
+static void printusage(char *progname){
 	fprintf(stderr,"Usage: %s OPTIONS\n"
 			"\t--help|-h\tPrint this help message.\n"
 			"\t--verbose|-v\tChoose program printing level (default is 1).\n"
@@ -110,6 +66,15 @@ void printusage(char *progname){
 			"\t--log|-L\tPrint to program log instead of standard output.\n",
 			progname);
 	exit(1);
+}
+
+static void init_random(){
+    unsigned int seed;
+    if(getrandom(&seed, sizeof(unsigned int), 0) == 0){
+        srandom(seed);
+    } else {
+        srandom(time(NULL) ^ getpid());
+    }
 }
 
 int main(int argc, char** argv){
@@ -214,14 +179,9 @@ int main(int argc, char** argv){
     if(query_stack == NULL) query_stack = ioth_newstack("kernel", NULL);
 	
 	init_random();
-	//mutex lock for packet id generation
-	pthread_mutex_init(&idlock, NULL);
+	
 	//mutex lock for stacks operations
 	pthread_mutex_init(&slock, NULL);
-	//mutex lock for writing on reverse address table
-	pthread_mutex_init(&ralock, NULL);
-
-	memset(id_table, 0, ID_TABLE_SIZE);
 
 	//program should not close in case of sigpipe
 	signal(SIGPIPE, SIG_IGN);
@@ -231,9 +191,7 @@ int main(int argc, char** argv){
 	//clean reverse address resolution record
 	for(;;){
 		sleep(1);
-		pthread_mutex_lock(&ralock);
 		ra_clean();
-		pthread_mutex_unlock(&ralock);
 	}
 }
 

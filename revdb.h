@@ -22,14 +22,30 @@
  */
 #ifndef REVDB_H
 #define REVDB_H
-#define _GNU_SOURCE
-#include <time.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 
+//Initialize reverse address table lock
+void ra_init();
+
+//Add domain,address to reverse address table
 void ra_add(char *name, struct in6_addr *addr);
+
+//Search for address in reverse address table
 char *ra_search(struct in6_addr *addr);
+
+//Clear entries older than timeout in reverse address table
 void ra_clean(void);
+
 void ra_set_timeout(unsigned int timeout);
 unsigned int ra_get_timeout(void);
+
+//Check if ipv6 address can be added to reverse address table
+int check_reverse_policy(struct in6_addr *addr, struct in6_addr *fromaddr);
+
+int set_reverse_policy(char *policy_str);
+
+//Get address from PTR record
+int getrevaddr(char *name, struct in6_addr *addr);
+
 #endif

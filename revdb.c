@@ -25,8 +25,13 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <ctype.h>
+#include <pthread.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
+
+#include "const.h"
+#include "utils.h"
 
 static unsigned int revtimeout = 3600;
 static unsigned int nrecords;
@@ -40,14 +45,18 @@ struct revaddr {
 };
 
 static struct revaddr *rah;
+static pthread_mutex_t ralock;
 
-void ra_add(char *name, struct in6_addr *addr)
-{
+void ra_init(){
+	pthread_mutex_init(&ralock, NULL);	
+}
+
+
+static void _ra_add(char *name, struct in6_addr *addr){
 	struct revaddr *scan=rah;
 	while (scan) {
 		if (memcmp (&(scan->addr),addr,sizeof(* addr)) == 0) {
 			scan->expire = time(NULL) + revtimeout;
-			//printf("update %ld\n",scan->expire);
 			return;
 		}
 		scan = scan->next;
@@ -58,25 +67,36 @@ void ra_add(char *name, struct in6_addr *addr)
 		ra->expire = time(NULL) + revtimeout;
 		ra->next = rah;
 		strcpy(ra->name,name);
-		//printf("new %ld\n",ra->expire);
 		nrecords++;
 		rah = ra;
 	}
 }
+void ra_add(char *name, struct in6_addr *addr){
+	pthread_mutex_lock(&ralock);
+	_ra_add(name, addr);
+	pthread_mutex_unlock(&ralock);
+}
 
-char *ra_search(struct in6_addr *addr)
-{
+static char *_ra_search(struct in6_addr *addr){
 	struct revaddr *scan=rah;
 	while (scan) {
-		if (memcmp (&(scan->addr),addr,sizeof(* addr)) == 0)
+		if (memcmp (&(scan->addr),addr,sizeof(* addr)) == 0){
+			pthread_mutex_unlock(&ralock);
 			return scan->name;
+		}
 		scan=scan->next;
 	}
 	return NULL;
 }
+char *ra_search(struct in6_addr *addr){
+	char* res;
+	pthread_mutex_lock(&ralock);
+	res = _ra_search(addr);
+	pthread_mutex_unlock(&ralock);
+	return res;
+}
 
-void ra_clean(void)
-{
+static void _ra_clean(void){
 	static time_t last;
 	time_t now=time(NULL);
 	if (now > last) {
@@ -94,6 +114,11 @@ void ra_clean(void)
 		last=now;
 	}
 }
+void ra_clean(void){
+	pthread_mutex_lock(&ralock);
+	_ra_clean();
+	pthread_mutex_unlock(&ralock);
+}
 
 void ra_set_timeout(unsigned int timeout) {
 	revtimeout = timeout;
@@ -102,3 +127,55 @@ void ra_set_timeout(unsigned int timeout) {
 unsigned int ra_get_timeout(void) {
 	return revtimeout;
 }
+
+static enum {NEVER, ALWAYS, SAME, NET} reverse_policy = ALWAYS;
+static char *reverse_policy_str[] = {"never", "always", "same", "net"};
+
+int check_reverse_policy(struct in6_addr *addr, struct in6_addr *fromaddr) {
+	char solved[64];
+	char sender[64];
+	printaddr6(solved, addr);
+	printaddr6(sender, addr);
+	printlog(LOG_DEBUG, "Checking Reverse Policy\n\tsolved: %s\n\tsender: %s\n", solved, sender);
+	switch (reverse_policy) {
+		case ALWAYS:
+			return 1;
+		case SAME:
+			return memcmp(addr, fromaddr, 16) == 0;
+		case NET:
+			return memcmp(addr, fromaddr, 8) == 0;
+		default:
+			return 0;
+	}
+}
+
+int set_reverse_policy(char *policy_str) {
+	int i;
+	for (i = 0; i < sizeof(reverse_policy_str)/sizeof(reverse_policy_str[0]); i++) {
+		if (strcmp(policy_str, reverse_policy_str[i]) == 0) {
+			reverse_policy = i;
+			return 0;
+		}
+	}
+	printlog(LOG_ERROR, "Error unknown reverse policy: %s\n", policy_str);
+	return -1;
+}
+
+#define REVTAIL "ip6.arpa"
+
+int getrevaddr(char *name, struct in6_addr *addr) {
+	int i,j;
+	printlog(LOG_DEBUG, "Resolving PTR: %s\n", name);
+	if (strlen(name) != 72 || strcmp(name+64,REVTAIL) != 0)
+		return 0;
+	for (i=0,j=60; i<16; i++,j-=4) {
+		char byte[3]={0, 0, 0};
+		if (name[j+1] != '.' || name[j+3] != '.' || 
+				!isxdigit(name[j]) || !isxdigit(name[j+2]))
+			return 0;
+		byte[0]=name[j+2],byte[1]=name[j];
+		addr->s6_addr[i] = strtol(byte,NULL, 16);
+	}
+	return 1;
+}
+

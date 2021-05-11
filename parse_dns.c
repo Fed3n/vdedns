@@ -3,7 +3,6 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <string.h>
-#include <ctype.h>
 #include <pthread.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
@@ -22,61 +21,11 @@
 #include "udp_dns.h"
 #include "tcp_dns.h"
 #include "revdb.h"
+#include "id_table.h"
 #include "const.h"
 
-static enum {NEVER, ALWAYS, SAME, NET} reverse_policy = ALWAYS;
-static char *reverse_policy_str[] = {"never", "always", "same", "net"};
-
-static int check_reverse_policy(struct in6_addr *addr, struct in6_addr *fromaddr) {
-	char solved[64];
-	char sender[64];
-	printaddr6(solved, addr);
-	printaddr6(sender, addr);
-	printlog(LOG_DEBUG, "Checking Reverse Policy\n\tsolved: %s\n\tsender: %s\n", solved, sender);
-	switch (reverse_policy) {
-		case ALWAYS:
-			return 1;
-		case SAME:
-			return memcmp(addr, fromaddr, 16) == 0;
-		case NET:
-			return memcmp(addr, fromaddr, 8) == 0;
-		default:
-			return 0;
-	}
-}
-
-int set_reverse_policy(char *policy_str) {
-	int i;
-	for (i = 0; i < sizeof(reverse_policy_str)/sizeof(reverse_policy_str[0]); i++) {
-		if (strcmp(policy_str, reverse_policy_str[i]) == 0) {
-			reverse_policy = i;
-			return 0;
-		}
-	}
-	printlog(LOG_ERROR, "Error unknown reverse policy: %s\n", policy_str);
-	return -1;
-}
-
-#define REVTAIL "ip6.arpa"
-
-static int getrevaddr(char *name, struct in6_addr *addr) {
-	int i,j;
-	printlog(LOG_DEBUG, "Resolving PTR: %s\n", name);
-	if (strlen(name) != 72 || strcmp(name+64,REVTAIL) != 0)
-		return 0;
-	for (i=0,j=60; i<16; i++,j-=4) {
-		char byte[3]={0, 0, 0};
-		if (name[j+1] != '.' || name[j+3] != '.' || 
-				!isxdigit(name[j]) || !isxdigit(name[j+2]))
-			return 0;
-		byte[0]=name[j+2],byte[1]=name[j];
-		addr->s6_addr[i] = strtol(byte,NULL, 16);
-	}
-	return 1;
-}
-
 //fills pktinfo structure with ipv6 addresses and number of addresses from response pkt
-int get_packet_answer(void* buf, ssize_t len, struct pktinfo* pinfo, uint16_t type){
+static int get_packet_answer(void* buf, ssize_t len, struct pktinfo* pinfo, uint16_t type){
     char name[IOTHDNS_MAXNAME];
     struct iothdns_pkt *pkt;
 	struct iothdns_header h;
@@ -160,9 +109,7 @@ void parse_ans(unsigned char* buf, ssize_t len, ans_function_t *ans_fun){
 					if(pinfo.type == TYPE_HASH){
 						for(i=0; i < pinfo.addr_n; i++){
 							if(check_reverse_policy(&pinfo.baseaddr[i], &ADDR6(&req->addr))){
-								pthread_mutex_lock(&ralock);
 								ra_add(pinfo.origdom, &pinfo.baseaddr[i]);
-								pthread_mutex_unlock(&ralock);
 								char addrbuf[64];
 								printaddr6(addrbuf, &pinfo.baseaddr[i]);
 								printlog(LOG_INFO, "Address %s with domain %s added address to revdb\n", 
@@ -286,9 +233,7 @@ int parse_req(int fd, unsigned char* buf, ssize_t len, struct sockaddr_storage* 
 					if(pinfo.type == TYPE_HASH){
 						for(i=0; i < pinfo.addr_n; i++){
 							if(check_reverse_policy(&pinfo.baseaddr[i], &ADDR6(from))){
-								pthread_mutex_lock(&ralock);
 								ra_add(pinfo.origdom, &pinfo.baseaddr[i]);
-								pthread_mutex_unlock(&ralock);
 								char addrbuf[64];
 								printaddr6(addrbuf, &pinfo.baseaddr[i]);
 								printlog(LOG_INFO, "Address %s with domain %s added address to revdb\n", 
