@@ -44,6 +44,38 @@ static int get_packet_answer(void* buf, ssize_t len, struct pktinfo* pinfo, uint
     return pinfo->addr_n;
 }
 
+
+#define MAX_RR 256
+#define RR_MAXSIZE 1024
+//transfers all RRs from packet buffer to ioth_dns packet structure
+static void transfer_pkt_rr(struct iothdns_pkt* dest_pkt, void* buf, ssize_t len){
+    char name[IOTHDNS_MAXNAME];
+	struct iothdns_header h;
+	struct iothdns_pkt* src_pkt = iothdns_get_header(&h, buf, len, name);
+	struct iothdns_rr *rr = malloc(sizeof(struct iothdns_rr)*MAX_RR);
+	void **data = malloc(MAX_RR);
+	int section;
+	int i = 0;
+    while((section = iothdns_get_rr(src_pkt, rr+i, h.qname)) != 0 && i < MAX_RR){
+		if(section == IOTHDNS_SEC_ADDITIONAL){
+			data[i] = malloc(RR_MAXSIZE);
+			iothdns_get_data(src_pkt, data[i], rr[i].rdlength);
+			i++;
+		}
+	}
+	int amount = i;
+	printlog(LOG_DEBUG, "Found %d additional Resource Records in packet for domain %s.\n",
+			amount, h.qname); 
+	for(i = 0; i < amount; i++){
+		iothdns_put_rr(IOTHDNS_SEC_ADDITIONAL, dest_pkt, &rr[i]);
+		iothdns_put_data(dest_pkt, data[i], rr[i].rdlength);
+		free(data[i]);
+	}
+	iothdns_free(src_pkt);
+	free(rr);
+	free(data);
+}
+
 //fills structure pktinfo with otip/hash address dns resource record if it's AAAA
 static void solve_hashing(struct pktinfo* pinfo){
     if(pinfo->h->qtype == IOTHDNS_TYPE_AAAA){
@@ -131,7 +163,9 @@ void parse_ans(unsigned char* buf, ssize_t len, ans_function_t *ans_fun){
 					free(pinfo.rr);
 					free(pinfo.baseaddr);
 				}
-					ans_fun(req->fd, iothdns_buf(pkt), iothdns_buflen(pkt), &req->addr, req->addrlen);
+				//transparently pass on all additional records
+				transfer_pkt_rr(pkt, buf, len);
+				ans_fun(req->fd, iothdns_buf(pkt), iothdns_buflen(pkt), &req->addr, req->addrlen);
 			} else {
 			//CASE GENERIC
 			//packet is not parsed but left as is except for id
@@ -284,6 +318,8 @@ int parse_req(int fd, unsigned char* buf, ssize_t len, struct sockaddr_storage* 
 			pinfo.origid = pinfo.h->id;
 			pinfo.h->id = get_unique_id(); 
 			pkt = iothdns_put_header(pinfo.h);
+			//transparently pass on all additional records
+			transfer_pkt_rr(pkt, buf, len);
 			fwd_fun(fd, iothdns_buf(pkt), iothdns_buflen(pkt), from, fromlen, &pinfo);
 		} else {
 			h.flags = (IOTHDNS_RESPONSE | IOTHDNS_RCODE_ENOENT);
