@@ -38,9 +38,13 @@ struct hashq* get_req(uint16_t id, char* qname){
 	return get_hashq(hash_h, id, ID_TABLE_SIZE, (void*)&args, reqdata_getcmpfun);
 }
 
-struct hashq* add_request(int fd, int dnsn, struct pktinfo *pinfo, 
-		struct sockaddr_storage *from, ssize_t fromlen){
+struct hashq* add_request(int fd, int dnsn, unsigned char* buf, ssize_t len,
+		struct pktinfo *pinfo, struct sockaddr_storage *from, ssize_t fromlen){
 	struct dnsreq *req = calloc(1, sizeof(struct dnsreq));
+
+	memcpy(req->pktbuf, buf, len);
+	req->pktlen = len;
+
 	req->h = *pinfo->h;
 	req->h.qname = strndup(pinfo->h->qname, IOTHDNS_MAXNAME);
 	req->origid = pinfo->origid;

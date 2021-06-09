@@ -44,7 +44,6 @@ uint16_t get_unique_id(){
 void free_id(uint16_t id){
 	pthread_mutex_lock(&idlock);
 	id_table[id]--;
-	//printf("ID AMOUNT IS NOW %d\n", id_table[id]);
 	pthread_mutex_unlock(&idlock);
 }
 

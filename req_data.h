@@ -11,6 +11,10 @@
 #include "const.h"
 
 struct dnsreq {
+	//save packet for fallback forwarding
+	unsigned char pktbuf[IOTHDNS_TCP_MAXBUF];
+	ssize_t pktlen;
+
 	//dns query request fields
 	struct iothdns_header h;
 	uint16_t origid;
@@ -37,7 +41,7 @@ struct hashq* next_expired_req(struct hashq** start);
 
 struct hashq* get_req(uint16_t id, char* qname);
 
-struct hashq* add_request(int fd, int dnsn, struct pktinfo *pinfo, 
-		struct sockaddr_storage *from, ssize_t fromlen);
+struct hashq* add_request(int fd, int dnsn, unsigned char* buf, ssize_t len, 
+		struct pktinfo *pinfo, struct sockaddr_storage *from, ssize_t fromlen);
 
 #endif

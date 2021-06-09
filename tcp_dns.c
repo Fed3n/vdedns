@@ -88,7 +88,7 @@ static void _fwd_tcp_req(int fd, unsigned char* buf, ssize_t len,
 	void* pkt = make_tcp_pkt(buf, &len);
 	if(send(qfd[dnsn], pkt, len, 0) > 0){
 		printlog(LOG_DEBUG, "Forwarding TCP request to query thread.\n");
-		add_request(fd, dnsn, pinfo, from, fromlen);	
+		add_request(fd, dnsn, buf, len, pinfo, from, fromlen);	
 	} else {
 		char errbuf[64];
 		strerror_r(errno, errbuf, 64);
@@ -327,17 +327,19 @@ static void manage_tcp_req_queue(){
 		if(qdns[++req->dnsn].sin6_family != 0){
 			char origdom[IOTHDNS_MAXNAME];
 			struct pktinfo pinfo;
+
 			pinfo.h = &req->h;
 			pinfo.h->id = get_unique_id();
+			req->pktbuf[0] = pinfo.h->id >> 8;
+			req->pktbuf[1] = pinfo.h->id;
+			
 			pinfo.origdom = origdom;
 			pinfo.origid = req->origid;
 			strncpy(pinfo.origdom, req->origdom, IOTHDNS_MAXNAME);
 			pinfo.type = req->type;
 			pinfo.opt = req->opt;
-			struct iothdns_pkt *pkt = iothdns_put_header(pinfo.h);
-			_fwd_tcp_req(req->fd, iothdns_buf(pkt), iothdns_buflen(pkt), 
+			_fwd_tcp_req(req->fd, req->pktbuf, req->pktlen, 
 					&req->addr, req->addrlen, &pinfo, req->dnsn);
-			iothdns_free(pkt);
 		}
 		free_req(iter);
 	}
