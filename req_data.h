@@ -12,7 +12,7 @@
 
 struct dnsreq {
 	//save packet for fallback forwarding
-	unsigned char pktbuf[IOTHDNS_TCP_MAXBUF];
+	unsigned char* pktbuf;
 	ssize_t pktlen;
 
 	//dns query request fields

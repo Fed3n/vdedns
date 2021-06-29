@@ -257,14 +257,12 @@ void* run_querier(void* args){
 				//so polling does not loop in case connection fails
 				nbytes = recv(sfd, buf, IOTHDNS_TCP_MAXBUF, 0);
 				if(!connected){
-					pthread_mutex_lock(&slock);
 					if((mfd = ioth_msocket(query_stack, AF_INET6, SOCK_STREAM, 0)) < 0){
 						char errbuf[64];
 						strerror_r(errno, errbuf, 64);
 						printlog(LOG_ERROR, "Error creating TCP querying socket to %s: %s\n", addrbuf, errbuf);
 						exit(1);
 					}
-					pthread_mutex_unlock(&slock);
 					if(ioth_connect(mfd, (struct sockaddr*)dnsaddr, sizeof(*dnsaddr)) < 0){
 						char errbuf[64];
 						strerror_r(errno, errbuf, 64);
@@ -322,12 +320,14 @@ static void manage_tcp_req_queue(){
     while((iter = next_expired_req(&current)) != NULL){
 		struct dnsreq *req = (struct dnsreq*)iter->data;
 		printlog(LOG_DEBUG, "Expired UDP Request ID: %d Query: %s\n", req->h.id, req->h.qname);
+		//free id previously in use
 		free_id(req->h.id);
 		//if there are more available dns we query them aswell
 		if(qdns[++req->dnsn].sin6_family != 0){
 			char origdom[IOTHDNS_MAXNAME];
 			struct pktinfo pinfo;
-
+			
+			//generate new id
 			pinfo.h = &req->h;
 			pinfo.h->id = get_unique_id();
 			req->pktbuf[0] = pinfo.h->id >> 8;

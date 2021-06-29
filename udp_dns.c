@@ -106,12 +106,14 @@ static void manage_udp_req_queue(){
     while((iter = next_expired_req(&current)) != NULL){
 		struct dnsreq *req = (struct dnsreq*)iter->data;
 		printlog(LOG_DEBUG, "Expired UDP Request ID: %d Query: %s\n", req->h.id, req->h.qname);
+		//free id previously in use
 		free_id(req->h.id);
 		//if there are more available dns we query them aswell
 		if(qdns[++req->dnsn].sin6_family != 0){
 			char origdom[IOTHDNS_MAXNAME];
 			struct pktinfo pinfo;
 
+			//generate new id
 			pinfo.h = &req->h;
 			pinfo.h->id = get_unique_id(); 
 			req->pktbuf[0] = pinfo.h->id >> 8;
@@ -143,7 +145,6 @@ void* run_udp(void* args){
 	}
     saddr.sin6_port = htons(DNS_PORT);
    	
-	pthread_mutex_lock(&slock);
     //UDP MSOCKET
     if((sfd = ioth_msocket(fwd_stack, AF_INET6, SOCK_DGRAM, 0)) < 0){
 		char errbuf[64];
@@ -157,7 +158,6 @@ void* run_udp(void* args){
 		printlog(LOG_ERROR, "Error creating UDP query socket: %s\n", errbuf);
         exit(1);
     }
-	pthread_mutex_unlock(&slock);
 	setsockopt(sfd, SOL_SOCKET, SO_REUSEADDR, &(int){1}, sizeof(int));
     setsockopt(sfd, IPPROTO_IPV6, IPV6_V6ONLY, &(int){0}, sizeof(int));
 	if(ioth_bind(sfd, (struct sockaddr*)&saddr, sizeof(saddr)) < 0){

@@ -43,8 +43,6 @@ long dnstimeout = TIMEOUT;
 unsigned int udp_maxbuf = IOTHDNS_UDP_MAXBUF;
 struct in6_addr *bindaddr = NULL;
 
-pthread_mutex_t slock;
-
 static void printusage(char *progname){
 	fprintf(stderr,"Usage: %s OPTIONS\n"
 			"\t--help|-h\tPrint this help message.\n"
@@ -179,9 +177,6 @@ int main(int argc, char** argv){
     if(query_stack == NULL) query_stack = ioth_newstack("kernel", NULL);
 	
 	init_random();
-	
-	//mutex lock for stacks operations
-	pthread_mutex_init(&slock, NULL);
 
 	//program should not close in case of sigpipe
 	signal(SIGPIPE, SIG_IGN);

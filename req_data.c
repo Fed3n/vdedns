@@ -19,7 +19,8 @@ void init_reqhashq(){
 
 void free_req(struct hashq* target){
 	struct dnsreq *data = (struct dnsreq*)free_hashq(target);
-	if(data->h.qname) free(data->h.qname);
+	free(data->pktbuf);
+	if(data->h.qname) free((void*)data->h.qname);
 	free(data);
 }
 
@@ -41,7 +42,10 @@ struct hashq* get_req(uint16_t id, char* qname){
 struct hashq* add_request(int fd, int dnsn, unsigned char* buf, ssize_t len,
 		struct pktinfo *pinfo, struct sockaddr_storage *from, ssize_t fromlen){
 	struct dnsreq *req = calloc(1, sizeof(struct dnsreq));
-
+	
+	//slighly optimize structure size by allocating only needed memory
+	//instead of MAXSIZE
+	req->pktbuf = malloc(len);
 	memcpy(req->pktbuf, buf, len);
 	req->pktlen = len;
 
