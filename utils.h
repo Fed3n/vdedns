@@ -17,10 +17,10 @@ int start_logging();
 void printlog(int level, const char *format, ...);
 
 //Get subdomain from full domain and base domain
-ssize_t get_subdom(char* dst, char* full, char* match);
+ssize_t get_subdom(char* dst, const char* full, const char* match);
 
 //Get next domain label from domain, returns NULL if there are no more labels
-char* next_domain_label(char* domain);
+char* next_domain_label(const char* domain);
 
 //Checks if address is in mapped ipv4 format
 int is_converted_ipv4(struct in6_addr *addr);

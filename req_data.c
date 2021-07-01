@@ -34,7 +34,7 @@ static __thread struct hashq** hash_h;
 
 struct reqdata_args{
 	uint16_t id;
-	char* qname;
+	const char* qname;
 };
 
 void init_reqhashq(){
@@ -58,7 +58,7 @@ int reqdata_getcmpfun(void* arg1, void* arg2){
 			strncmp(((struct reqdata_args*)arg1)->qname, ((struct dnsreq*)arg2)->h.qname, 
 				IOTHDNS_MAXNAME) == 0);
 }
-struct hashq* get_req(uint16_t id, char* qname){
+struct hashq* get_req(uint16_t id, const char* qname){
 	struct reqdata_args args = {id, qname};
 	return get_hashq(hash_h, id, ID_TABLE_SIZE, (void*)&args, reqdata_getcmpfun);
 }

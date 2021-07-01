@@ -80,7 +80,7 @@ static void transfer_pkt_rr(struct iothdns_pkt* dest_pkt, void* buf, ssize_t len
 	void **data = malloc(MAX_RR);
 	int section;
 	int i = 0;
-    while((section = iothdns_get_rr(src_pkt, rr+i, h.qname)) != 0 && i < MAX_RR){
+    while((section = iothdns_get_rr(src_pkt, rr+i, name)) != 0 && i < MAX_RR){
 		if(section == IOTHDNS_SEC_ADDITIONAL){
 			data[i] = malloc(RR_MAXSIZE);
 			iothdns_get_data(src_pkt, data[i], rr[i].rdlength);
@@ -175,7 +175,7 @@ void parse_ans(unsigned char* buf, ssize_t len, ans_function_t *ans_fun){
 					}
 				}
 				//replaces solved domain with original requested domain
-				strncpy(h.qname, pinfo.origdom, IOTHDNS_MAXNAME);
+				h.qname = pinfo.origdom;
 				iothdns_free(pkt);
 				pkt = iothdns_put_header(&h);
 				//if it's a vdedns domain but query is not AAAA, we send an empty record
@@ -266,7 +266,7 @@ int parse_req(int fd, unsigned char* buf, ssize_t len, struct sockaddr_storage* 
 			pinfo.opt = odom->pswd;
 			pinfo.otip_time = odom->time;
 			//domain unchanged in otip
-			pinfo.origdom = h.qname;
+			pinfo.origdom = (char*)h.qname;
 		}
 		//checks if domain matches as hash subdomain
 		if((hdom = lookup_hash_domain(h.qname)) != NULL){
@@ -283,9 +283,11 @@ int parse_req(int fd, unsigned char* buf, ssize_t len, struct sockaddr_storage* 
 			//hash/otip resolution for ipv6 only
 			if(pinfo.type != TYPE_BASE){
 				if(h.qtype == IOTHDNS_TYPE_AAAA && addri->addr6 != NULL){
+					//allocates memory for number of address records
 					pinfo.baseaddr = malloc(addri->addr6_n*sizeof(struct in6_addr));
 					memcpy(pinfo.baseaddr, addri->addr6, addri->addr6_n*sizeof(struct in6_addr)); 
 					pinfo.addr_n = addri->addr6_n;
+					//hashes addresses in pinfo structure
 					solve_hashing(&pinfo);
 					//if hash type && reverse policy is met, add addr to reverse db
 					if(pinfo.type == TYPE_HASH){

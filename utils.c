@@ -94,7 +94,7 @@ void printlog(int level, const char *format, ...){
 
 
 //STRING MANIPULATION
-ssize_t get_subdom(char* dst, char* full, char* match){
+ssize_t get_subdom(char* dst, const char* full, const char* match){
 	ssize_t flen = strnlen(full, IOTHDNS_MAXNAME);
 	ssize_t mlen = strnlen(match, IOTHDNS_MAXNAME);
 	if((flen-mlen-1) <= 0) return 0;
@@ -104,8 +104,8 @@ ssize_t get_subdom(char* dst, char* full, char* match){
 
 //returns pointer to first char of string after '.' symbol
 //returns NULL if no '.' symbols remaining in string
-char* next_domain_label(char* domain){
-    char* res = domain;
+char* next_domain_label(const char* domain){
+    char* res = (char*)domain;
     while(*res != '\0'){
         if(*res == '.') {
             return ++res;

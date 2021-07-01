@@ -39,7 +39,7 @@ void free_req(struct hashq* target);
 
 struct hashq* next_expired_req(struct hashq** start);
 
-struct hashq* get_req(uint16_t id, char* qname);
+struct hashq* get_req(uint16_t id, const char* qname);
 
 struct hashq* add_request(int fd, int dnsn, unsigned char* buf, ssize_t len, 
 		struct pktinfo *pinfo, struct sockaddr_storage *from, ssize_t fromlen);

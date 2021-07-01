@@ -1,8 +1,9 @@
 #ifndef CONFIG_H
 #define CONFIG_H
 
-#include <sys/socket.h>
 #include <stdint.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
 #include "const.h"
 
 struct dns_otipdom {
@@ -34,9 +35,9 @@ struct dns_authinfo {
 
 extern struct sockaddr_in6 qdns[MAX_DNS];
 
-struct dns_otipdom* lookup_otip_domain(char* domain);
-struct dns_hashdom* lookup_hash_domain(char* domain);
-struct dns_addrinfo* lookup_domain_addr(char* domain);
+struct dns_otipdom* lookup_otip_domain(const char* domain);
+struct dns_hashdom* lookup_hash_domain(const char* domain);
+struct dns_addrinfo* lookup_domain_addr(const char* domain);
 int check_auth(struct sockaddr_storage* addr);
 int init_config();
 

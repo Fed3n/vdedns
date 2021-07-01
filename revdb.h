@@ -29,7 +29,7 @@
 void ra_init();
 
 //Add domain,address to reverse address table
-void ra_add(char *name, struct in6_addr *addr);
+void ra_add(const char *name, struct in6_addr *addr);
 
 //Search for address in reverse address table
 char *ra_search(struct in6_addr *addr);
@@ -46,6 +46,6 @@ int check_reverse_policy(struct in6_addr *addr, struct in6_addr *fromaddr);
 int set_reverse_policy(char *policy_str);
 
 //Get address from PTR record
-int getrevaddr(char *name, struct in6_addr *addr);
+int getrevaddr(const char *name, struct in6_addr *addr);
 
 #endif

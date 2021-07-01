@@ -46,7 +46,7 @@ static struct dns_authinfo* auth_h;
 struct sockaddr_in6 qdns[MAX_DNS];
 
 
-struct dns_otipdom* lookup_otip_domain(char* domain){
+struct dns_otipdom* lookup_otip_domain(const char* domain){
 	struct dns_otipdom* iter;
 	for(iter=otip_h; iter != NULL; iter=iter->next){
 		if(strncmp(domain, iter->domain, IOTHDNS_MAXNAME) == 0){
@@ -57,7 +57,7 @@ struct dns_otipdom* lookup_otip_domain(char* domain){
 }
 
 //matches longest corresponding domain and returns dns_hashdom struct, NULL if not found
-struct dns_hashdom* lookup_hash_domain(char* domain){
+struct dns_hashdom* lookup_hash_domain(const char* domain){
     struct dns_hashdom* iter;
     while(domain != NULL){
         iter = hash_h;
@@ -73,7 +73,7 @@ struct dns_hashdom* lookup_hash_domain(char* domain){
     return NULL;
 }
 
-struct dns_addrinfo* lookup_domain_addr(char* domain){
+struct dns_addrinfo* lookup_domain_addr(const char* domain){
 	struct dns_addrinfo* iter;
 	for(iter=addr_h; iter != NULL; iter=iter->next){
 		if(strncmp(domain, iter->domain, IOTHDNS_MAXNAME) == 0){

@@ -75,7 +75,7 @@ void ra_init(){
 }
 
 
-static void _ra_add(char *name, struct in6_addr *addr){
+static void _ra_add(const char *name, struct in6_addr *addr){
 	struct revaddr *scan=rah;
 	while (scan) {
 		if (memcmp (&(scan->addr),addr,sizeof(* addr)) == 0) {
@@ -94,7 +94,7 @@ static void _ra_add(char *name, struct in6_addr *addr){
 		rah = ra;
 	}
 }
-void ra_add(char *name, struct in6_addr *addr){
+void ra_add(const char *name, struct in6_addr *addr){
 	pthread_mutex_lock(&ralock);
 	_ra_add(name, addr);
 	pthread_mutex_unlock(&ralock);
@@ -186,7 +186,7 @@ int set_reverse_policy(char *policy_str) {
 
 #define REVTAIL "ip6.arpa"
 
-int getrevaddr(char *name, struct in6_addr *addr) {
+int getrevaddr(const char *name, struct in6_addr *addr) {
 	int i,j;
 	printlog(LOG_DEBUG, "Resolving PTR: %s\n", name);
 	if (strlen(name) != 72 || strcmp(name+64,REVTAIL) != 0)
