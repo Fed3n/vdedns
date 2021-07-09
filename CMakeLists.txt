@@ -2,6 +2,7 @@ cmake_minimum_required(VERSION 3.13)
 project(VdeDNS  VERSION 0.1
                 DESCRIPTION "IoTh-enabled proxy DNS for the resolution of IPv6 Hash Addresses"
                 LANGUAGES C)
+
 set(CMAKE_BUILD_TYPE Debug)
 
 file(GLOB SOURCES "./*.c")
@@ -31,11 +32,15 @@ endforeach(HEAD)
 
 
 include_directories(${CMAKE_CURRENT_SOURCE_DIR})
+include_directories(${CMAKE_CURRENT_BINARY_DIR})
+
 add_executable(vdedns ${SOURCES} vdedns.cfg)
 target_link_libraries(vdedns ${REQLIBS})
 
 install(TARGETS vdedns DESTINATION ${CMAKE_INSTALL_BINDIR})
-install(FILES vdedns.cfg DESTINATION etc/)
+install(FILES vdedns.cfg DESTINATION ${CMAKE_INSTALL_SYSCONFDIR})
+
+configure_file(config.h.in config.h)
 
 #add_subdirectory(man)
 

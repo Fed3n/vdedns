@@ -39,7 +39,7 @@
 #include <iothdns.h>
 
 #include "dns.h"
-#include "config.h"
+#include "dns_config.h"
 #include "utils.h"
 #include "parse_dns.h"
 #include "udp_dns.h"

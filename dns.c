@@ -45,7 +45,7 @@
 #include "tcp_dns.h"
 #include "parse_dns.h"
 #include "revdb.h"
-#include "config.h"
+#include "dns_config.h"
 #include "utils.h"
 #include "const.h"
 

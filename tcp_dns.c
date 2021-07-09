@@ -43,7 +43,7 @@
 #include "tcp_dns.h"
 #include "tcpfd_data.h"
 #include "id_table.h"
-#include "config.h"
+#include "dns_config.h"
 #include "utils.h"
 #include "const.h"
 

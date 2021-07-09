@@ -41,7 +41,7 @@
 #include "dns.h"
 #include "udp_dns.h"
 #include "parse_dns.h"
-#include "config.h"
+#include "dns_config.h"
 #include "id_table.h"
 #include "utils.h"
 #include "const.h"
