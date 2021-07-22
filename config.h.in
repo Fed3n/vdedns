@@ -1,6 +1,6 @@
 #ifndef CONFIG_H
 #define CONFIG_H
 
-#cmakedefine CONFIG_PATH "@CMAKE_INSTALL_SYSCONFDIR@"
+#define CONFIG_PATH "@CMAKE_INSTALL_FULL_SYSCONFDIR@"
 
 #endif

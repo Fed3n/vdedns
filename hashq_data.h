@@ -38,8 +38,8 @@ void* free_hashq(struct hashq* target);
 struct hashq* next_expired_hashq(struct hashq* queue_h, struct hashq** start,
 		long value);
 
-//Moves element to tail of queue
-void moveto_tail(struct hashq* queue_h, struct hashq* target);
+//Moves element to tail of queue and updates expiration time
+void moveto_tail(struct hashq* queue_h, struct hashq* target, long expire);
 
 //Returns hashq data according to search function and parameters, else NULL
 struct hashq* get_hashq(struct hashq** hash_h, int hashval, 

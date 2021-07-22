@@ -26,6 +26,7 @@ struct hashq* get_fd(int fd);
 
 struct hashq* add_fd(int fd, struct clientconn* dataptr);
 
+//Updates file descriptor, moving it to queue tail and updating time
 void update_fd(int fd);
 
 #endif

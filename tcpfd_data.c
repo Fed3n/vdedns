@@ -68,5 +68,5 @@ struct hashq* add_fd(int fd, struct clientconn* dataptr){
 
 void update_fd(int fd){
 	struct hashq *target = get_fd(fd);
-	moveto_tail(queue_h, target);
+	moveto_tail(queue_h, target, time(NULL)+CLIENT_TIMEOUT);
 }

@@ -73,7 +73,8 @@ struct hashq* get_hashq(struct hashq** hash_h, int hashval,
 	return NULL;
 }
 
-void moveto_tail(struct hashq* queue_h, struct hashq* target){
+void moveto_tail(struct hashq* queue_h, struct hashq* target, long expire){
+    target->expire = expire;
 	target->qprev->qnext = target->qnext;
 	target->qnext->qprev = target->qprev;
 	target->qprev = queue_h->qprev;

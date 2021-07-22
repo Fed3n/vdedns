@@ -113,15 +113,18 @@ int init_config(){
 	config_setting_t *setting, *list;
 
 	config_init(&cfg);
-
-	char manualpath[PATH_MAX];
+    
+    //if config file path is not specified
+    //when executing as root tries root config path
+    //else tries user's local config path
+	char defaultpath[PATH_MAX];
 	if(geteuid() == 0){
-		sprintf(manualpath, "%s/%s", CONFIG_PATH, CONFIGFILE);
+		sprintf(defaultpath, "%s/%s", CONFIG_PATH, CONFIGFILE);
 	} else {
-		sprintf(manualpath, "/home/%s/.config/%s", getlogin(), CONFIGFILE);
+		sprintf(defaultpath, "/home/%s/.config/%s", getlogin(), CONFIGFILE);
 	}
 	
-	char* configpath = setconfigpath ? setconfigpath : manualpath;
+	char* configpath = setconfigpath ? setconfigpath : defaultpath;
 
 	if(access(configpath, R_OK) != 0){
 		printlog(LOG_ERROR, "Error cannot access configuration file %s\n", configpath);
