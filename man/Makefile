@@ -6,11 +6,11 @@ none:
 % : %.ronn
 ifdef RONNOK
 # copy copyright notice
-    grep "^\.\\\\\"" $< > $@ || true
+	grep "^\.\\\\\"" $< > $@ || true
 # run ronn
-    $(RONN) -r ${RONN_ARGS} --pipe $< >> $@
+	$(RONN) -r ${RONN_ARGS} --pipe $< >> $@
 # delete useless trailing "" in .TH
-    sed -i '/^\.TH /s/ ""$$//' $@
+	sed -i '/^\.TH /s/ ""$$//' $@
 else
-    echo "${RONN} is not available. Manpage $@ cannot be updated" >/dev/stderr >&2
+	echo "${RONN} is not available. Manpage $@ cannot be updated" >/dev/stderr >&2
 endif

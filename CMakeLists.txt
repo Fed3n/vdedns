@@ -42,7 +42,7 @@ install(FILES vdedns.cfg DESTINATION ${CMAKE_INSTALL_SYSCONFDIR})
 
 configure_file(config.h.in config.h)
 
-#add_subdirectory(man)
+add_subdirectory(man)
 
 add_custom_target(uninstall
   "${CMAKE_COMMAND}" -P "${PROJECT_SOURCE_DIR}/Uninstall.cmake")
