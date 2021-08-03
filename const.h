@@ -5,6 +5,7 @@
 
 
 //DNS
+#define DNS_ID_MAX 65536
 #define DNS_PORT 53
 #define TIMEOUT 1000
 #define TTL 600
@@ -12,9 +13,12 @@
 #define CLIENT_TIMEOUT 3
 #define LISTEN_QUEUE 256
 
-//HASHTABLES
-#define ID_TABLE_SIZE 65536
-#define FD_TABLE_SIZE 2048
+//TABLES
+//id_table_size is fixed
+#define ID_TABLE_SIZE (DNS_ID_MAX/8)
+//req and fd tables size can be changed
+#define REQ_TABLE_SIZE 1024
+#define FD_TABLE_SIZE 512
 
 #define DEF_OTIP_PERIOD 32
 

@@ -84,7 +84,7 @@ void moveto_tail(struct hashq* queue_h, struct hashq* target, long expire){
 }
 
 struct hashq* add_hashq(struct hashq* queue_h, struct hashq** hash_h, 
-		int hashval, long expire, void* data){
+		int hashval, int hashsize, long expire, void* data){
 	struct hashq* new = malloc(sizeof(struct hashq));
 	new->expire = expire;
 	new->data = data;
@@ -93,9 +93,9 @@ struct hashq* add_hashq(struct hashq* queue_h, struct hashq** hash_h,
 	new->qnext = queue_h;
 	queue_h->qprev = new;
 	//add to hashtable
-	new->hprev = hash_h[hashval]->hprev;
-	hash_h[hashval]->hprev->hnext = new;
-	new->hnext = hash_h[hashval];
-	hash_h[hashval]->hprev = new;
+	new->hprev = hash_h[hashval%hashsize]->hprev;
+	hash_h[hashval%hashsize]->hprev->hnext = new;
+	new->hnext = hash_h[hashval%hashsize];
+	hash_h[hashval%hashsize]->hprev = new;
 	return new;
 }

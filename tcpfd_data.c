@@ -63,7 +63,8 @@ struct hashq* add_fd(int fd, struct clientconn* dataptr){
 	data->fd = fd;
 	data->fd_data = dataptr;
 	//add to queue
-	return add_hashq(queue_h, hash_h, fd, time(NULL)+CLIENT_TIMEOUT, (void*)data);
+	return add_hashq(queue_h, hash_h, fd, FD_TABLE_SIZE, 
+            time(NULL)+CLIENT_TIMEOUT, (void*)data);
 }
 
 void update_fd(int fd){

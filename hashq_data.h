@@ -47,6 +47,6 @@ struct hashq* get_hashq(struct hashq** hash_h, int hashval,
 
 //Appends new element to queue and  adds to hashtable in corresponding position
 struct hashq* add_hashq(struct hashq* queue_h, struct hashq** hash_h, 
-		int hashval, long expire, void* data);
+		int hashval, int hashsize, long expire, void* data);
 
 #endif

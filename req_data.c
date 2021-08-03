@@ -38,7 +38,7 @@ struct reqdata_args{
 };
 
 void init_reqhashq(){
-	init_hashq(&queue_h, &hash_h, ID_TABLE_SIZE);
+	init_hashq(&queue_h, &hash_h, REQ_TABLE_SIZE);
 }
 
 void free_req(struct hashq* target){
@@ -60,7 +60,7 @@ int reqdata_getcmpfun(void* arg1, void* arg2){
 }
 struct hashq* get_req(uint16_t id, const char* qname){
 	struct reqdata_args args = {id, qname};
-	return get_hashq(hash_h, id, ID_TABLE_SIZE, (void*)&args, reqdata_getcmpfun);
+	return get_hashq(hash_h, id, REQ_TABLE_SIZE, (void*)&args, reqdata_getcmpfun);
 }
 
 struct hashq* add_request(int fd, int dnsn, unsigned char* buf, ssize_t len,
@@ -97,5 +97,6 @@ struct hashq* add_request(int fd, int dnsn, unsigned char* buf, ssize_t len,
 	req->addrlen = fromlen;
 	
 	//add to queue
-	return add_hashq(queue_h, hash_h, pinfo->h->id, get_time_ms()+dnstimeout, (void*)req);
+	return add_hashq(queue_h, hash_h, pinfo->h->id, REQ_TABLE_SIZE,
+            get_time_ms()+dnstimeout, (void*)req);
 }

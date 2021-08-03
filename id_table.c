@@ -33,13 +33,25 @@
 #include "const.h"
 #include "utils.h"
 
-static uint8_t id_table[ID_TABLE_SIZE];
+static uint8_t id_table[DNS_ID_MAX/8];
 static pthread_mutex_t idlock;
 
 
 void init_idtable(){
 	pthread_mutex_init(&idlock, NULL);
-	memset(id_table, 0, ID_TABLE_SIZE);
+	memset(id_table, 0, ID_TABLE_SIZE/8);
+}
+
+static void add_id(uint16_t n){
+    id_table[n/8] |= ( 0x1 << (n%8) ); 
+}
+
+static void remove_id(uint16_t n){
+    id_table[n/8] &= ~( 0x1 << (n%8) );
+}
+
+static int check_id(uint16_t n){
+    return id_table[n/8] & ( 0x1 << (n%8) );
 }
 
 //tries to generate unique packet ids across both threads
@@ -52,14 +64,15 @@ uint16_t get_unique_id(){
 	pthread_mutex_lock(&idlock);
 	for(i = 0; i < MAX_RETRY; i++){
 		id = random();
-		if(id_table[id] == 0) {
-			id_table[id]++;
+		if(!check_id(id)) {
+		    add_id(id);
 			break;
 		}
+		printlog(LOG_DEBUG, "Check ID failed, currently at %d tries.\n", i+1);
 	}
 	if(i >= MAX_RETRY) {
 		printlog(LOG_ERROR, "Failed to generate unique ID.\n");
-		id_table[id]++;
+		add_id(id);
 	}
 	pthread_mutex_unlock(&idlock);
 	return id;
@@ -67,7 +80,7 @@ uint16_t get_unique_id(){
 
 void free_id(uint16_t id){
 	pthread_mutex_lock(&idlock);
-	id_table[id]--;
+    remove_id(id);
 	pthread_mutex_unlock(&idlock);
 }
 
